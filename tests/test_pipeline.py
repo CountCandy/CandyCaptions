@@ -195,9 +195,10 @@ async def test_pause_finishes_images_in_flight_then_resume_and_interrupted_run(t
 
     folder = tmp_path / "many"
     folder.mkdir()
-    for n in range(8):
-        make_image(folder / f"img{n}.png", (n * 30, 40, 200 - n * 20), tags="1girl")
-    server, url = _serve(create_app(delay=0.15))
+    total = 30   # far more than can finish before the stop below, so the test does not depend on timing
+    for n in range(total):
+        make_image(folder / f"img{n}.png", (n * 8, 40, 250 - n * 8), size=(320, 320), tags="1girl")
+    server, url = _serve(create_app(delay=0.2))
     slow = dict(settings, base_url=url)
     try:
         project = Project(folder)
@@ -212,7 +213,7 @@ async def test_pause_finishes_images_in_flight_then_resume_and_interrupted_run(t
         while runner.state != "paused":
             await asyncio.sleep(0.02)
         done_at_pause = runner.done
-        assert not runner.in_flight and 1 <= done_at_pause < 8
+        assert not runner.in_flight and 1 <= done_at_pause < total
         await asyncio.sleep(0.5)
         assert runner.done == done_at_pause            # nothing new starts while paused
         runner.resume()
@@ -221,14 +222,14 @@ async def test_pause_finishes_images_in_flight_then_resume_and_interrupted_run(t
         runner.stop()
         await runner.wait()
         stopped_at = runner.done
-        assert runner.state == "stopped" and stopped_at < 8
+        assert runner.state == "stopped" and stopped_at < total
         assert runner.status()["interrupted"]["run_id"] == runner.run_id
 
         # Resuming an interrupted overwrite run skips what that run already finished.
         again = Runner(project, slow)
         again.start(resume=True)
         await again.wait()
-        assert again.state == "done" and again.skipped == stopped_at and again.done == 8 - stopped_at
+        assert again.state == "done" and again.skipped == stopped_at and again.done == total - stopped_at
         assert again.status()["interrupted"] is None
         assert again.status()["seconds_per_image"] > 0
     finally:
