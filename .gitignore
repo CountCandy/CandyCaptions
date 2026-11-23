@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.log
+.DS_Store
+
+# The app's own data folder: settings, project stores, backups, tokenizer cache
+data/
+
+# Internal plans and notes
+docs/
