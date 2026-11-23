@@ -25,7 +25,7 @@ from PIL import Image
 
 from . import tokens
 from .backends import BACKENDS, effective_caps
-from .client import ModelClient, ModelServerError
+from .client import ModelClient, ModelServerError, normalise_base_url
 from .config import STATIC_DIR, data_dir, load_settings, save_settings
 from .connect import test_connection
 from .dataset import HEALTH_CHECKS, Project
@@ -157,6 +157,7 @@ async def put_settings(body: dict = Body(...)):
     for key, value in body.items():
         if key in settings and key != "caps":
             settings[key] = value
+    settings["base_url"] = normalise_base_url(settings["base_url"])
     if connection_changed:
         settings["caps"] = {}  # what one server supports says nothing about another
     save_settings(settings)

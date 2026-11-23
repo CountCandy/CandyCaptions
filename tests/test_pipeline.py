@@ -234,3 +234,15 @@ async def test_pause_finishes_images_in_flight_then_resume_and_interrupted_run(t
         assert again.status()["seconds_per_image"] > 0
     finally:
         server.should_exit = True
+
+
+async def test_connection_test_accepts_a_bare_address_and_rejects_a_wrong_path(settings):
+    bare = settings["base_url"].removesuffix("/v1")
+    assert (await probe_connection(dict(settings, base_url=bare, model="")))["ok"]
+
+    # A server that answers 200 with something that is not a model list is not "connected".
+    import httpx
+
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json={"error": "Unexpected endpoint or method."}))
+    wrong = await probe_connection(dict(settings, base_url="http://elsewhere/api"), transport=transport)
+    assert not wrong["ok"] and "did not return a model list" in wrong["lines"][0]["text"]

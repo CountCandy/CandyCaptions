@@ -165,3 +165,14 @@ def test_sampling_never_sends_what_a_backend_ignores():
     assert sampling_body("llamacpp", sampling, 800)["chat_template_kwargs"] == {"enable_thinking": False}
     assert "repetition_penalty" in sampling_body("vllm", sampling, 800)
     assert set(sampling_body("other", sampling, 800)) == {"temperature", "top_p", "seed", "max_tokens"}
+
+
+@pytest.mark.parametrize("given,expected", [
+    ("http://127.0.0.1:1234", "http://127.0.0.1:1234/v1"), ("http://localhost:1234/", "http://localhost:1234/v1"),
+    ("localhost:1234", "http://localhost:1234/v1"), ("http://localhost:1234/v1/", "http://localhost:1234/v1"),
+    ("https://example.com/api/v1", "https://example.com/api/v1"), ("", ""),
+])
+def test_a_bare_server_address_gets_v1(given, expected):
+    from candycaption.client import normalise_base_url
+
+    assert normalise_base_url(given) == expected

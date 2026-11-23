@@ -99,11 +99,21 @@ def _has_image(messages: list[dict[str, Any]]) -> bool:
     )
 
 
+def normalise_base_url(url: str) -> str:
+    """Accept a bare server address: http://127.0.0.1:1234 means http://127.0.0.1:1234/v1."""
+    url = url.strip().rstrip("/")
+    if url and "://" not in url:
+        url = "http://" + url
+    if url and not httpx.URL(url).path.strip("/"):
+        url += "/v1"
+    return url
+
+
 class ModelClient:
     def __init__(self, settings: dict[str, Any], transport: httpx.AsyncBaseTransport | None = None):
         self.settings = settings
         self.backend = settings.get("backend", "other")
-        self.base_url = (settings.get("base_url") or "").rstrip("/")
+        self.base_url = normalise_base_url(settings.get("base_url") or "")
         self.caps = effective_caps(settings)
         headers = {}
         if settings.get("api_key"):
@@ -178,7 +188,10 @@ class ModelClient:
 
     async def list_models(self) -> list[str]:
         data = await self._post_or_get("GET", "/models")
-        return sorted(item["id"] for item in data.get("data", []) if "id" in item)
+        if not isinstance(data.get("data"), list):
+            raise ModelServerError("reply", f"{self.base_url}/models did not return a model list. "
+                                            "Check the base URL; it normally ends in /v1.")
+        return sorted(item["id"] for item in data["data"] if "id" in item)
 
     async def complete(
         self,
