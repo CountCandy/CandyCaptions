@@ -246,3 +246,62 @@ async def test_connection_test_accepts_a_bare_address_and_rejects_a_wrong_path(s
     transport = httpx.MockTransport(lambda request: httpx.Response(200, json={"error": "Unexpected endpoint or method."}))
     wrong = await probe_connection(dict(settings, base_url="http://elsewhere/api"), transport=transport)
     assert not wrong["ok"] and "did not return a model list" in wrong["lines"][0]["text"]
+
+
+async def test_a_reply_that_is_all_thinking_says_so(dataset, settings):
+    import httpx
+
+    def thinking_only(request):
+        import json
+
+        if json.loads(request.content).get("stream"):
+            chunks = [{"choices": [{"delta": {"reasoning_content": "Let me think"}, "finish_reason": None}]},
+                      {"choices": [{"delta": {}, "finish_reason": "length"}]}]
+            body = "".join(f"data: {json.dumps(c)}\n\n" for c in chunks) + "data: [DONE]\n\n"
+            return httpx.Response(200, text=body, headers={"content-type": "text/event-stream"})
+        return httpx.Response(200, json={"choices": [{"finish_reason": "length", "message": {
+            "role": "assistant", "content": "", "reasoning_content": "Let me think about the notes..."}}]})
+
+    client = ModelClient(settings, transport=httpx.MockTransport(thinking_only))
+    reply = await client.complete("m", [{"role": "user", "content": "hi"}], sampling={}, max_tokens=50)
+    assert reply.text == "" and reply.thought and "Turn thinking off" in reply.why_empty()
+    await client.close()
+
+    def unfinished_think_tag(request):
+        return httpx.Response(200, json={"choices": [{"finish_reason": "length", "message": {"content": "<think>The scarf is"}}]})
+
+    client = ModelClient(settings, transport=httpx.MockTransport(unfinished_think_tag))
+    reply = await client.complete("m", [{"role": "user", "content": "hi"}], sampling={}, max_tokens=50)
+    assert reply.text == "" and reply.thought
+    await client.close()
+
+    project = Project(dataset)
+    runner = Runner(project, settings, client_factory=lambda s: ModelClient(s, transport=httpx.MockTransport(thinking_only)))
+    runner.start()
+    await runner.wait()
+    assert runner.failed == 3
+    assert all("Turn thinking off" in image["error"] for image in project.store.images())
+
+
+async def test_a_fault_after_the_caption_is_written_never_loses_the_caption(dataset, settings, monkeypatch):
+    from candycaption import pipeline
+    from candycaption.client import ModelServerError
+
+    async def broken_check(self, image_url, fields, keys=None):
+        raise ModelServerError("http", "The model server refused the request (400): no")
+
+    def broken_scoring(self, image, fields, reply, checks, previous=None):
+        raise KeyError("surprise")
+
+    monkeypatch.setattr(pipeline.Captioner, "check", broken_check)
+    project, runner, _ = await run(dataset, settings, field_checks="all")
+    assert runner.done == 3 and runner.failed == 0
+    image = by_name(project)["plain.png"]
+    assert image["status"] == "done" and (dataset / "plain_nl.txt").exists()
+    assert "refused" in image["signals"]["checks"]["error"]
+
+    monkeypatch.setattr(pipeline.Captioner, "signals_for", broken_scoring)
+    project, runner, _ = await run(dataset, settings, overwrite=True)
+    assert runner.done == 3 and runner.failed == 0
+    image = by_name(project)["plain.png"]
+    assert image["status"] == "done" and image["fields"] and "KeyError" in image["signals"]["error"]

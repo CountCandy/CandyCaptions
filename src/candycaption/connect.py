@@ -53,7 +53,14 @@ async def test_connection(settings: dict[str, Any], probe_image_url: str | None 
             client.caps["chat_logprobs"] = False
             caps["chat_logprobs"] = False
             reply = await client.complete(model, messages, sampling=sampling, max_tokens=24)
-        note(True, f"{model} read the test image and answered: \"{reply.text[:80]}\"")
+        if reply.text:
+            note(True, f"{model} read the test image and answered: \"{reply.text[:80]}\"")
+        else:
+            note(False, f"{model} gave no answer about the test image. " + (reply.why_empty() or "Check that it accepts images."))
+        if reply.thought:
+            note(False, "This model is thinking before it answers. Captions can come back empty that way, and it is "
+                        "slower. Turn thinking off in the model's settings on the server.")
+        caps["thinking_seen"] = reply.thought
         note(caps["chat_logprobs"], "Token probabilities on chat completions." if caps["chat_logprobs"]
              else "No token probabilities on chat completions.")
 

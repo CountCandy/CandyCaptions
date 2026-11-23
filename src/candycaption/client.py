@@ -38,6 +38,18 @@ class Reply:
     seconds: float
     route: str
     payload: dict[str, Any] = field(default_factory=dict)
+    # True when the model produced reasoning ("thinking") as well as, or instead of, an answer.
+    thought: bool = False
+    cut_off: bool = False
+
+    def why_empty(self) -> str:
+        """Plain-words reason for a reply with no usable answer in it."""
+        if self.thought:
+            return ("The model spent its reply on thinking and wrote no answer. Turn thinking off for this model "
+                    "(in LM Studio: the model's settings), then try again.")
+        if self.cut_off:
+            return "The reply was cut off at the token limit before it finished. Raise the max tokens setting."
+        return ""
 
 
 def text_part(text: str) -> dict[str, Any]:
@@ -213,25 +225,34 @@ class ModelClient:
 
     async def send(self, route: str, body: dict[str, Any], on_delta=None) -> Reply:
         started = time.monotonic()
+        thought = cut_off = False
         if route == "responses":
             data = await self._post_or_get("POST", "/responses", body)
             raw, tokens = _parse_responses(data)
             used = (data.get("usage") or {}).get("output_tokens", 0)
+            thought = any(item.get("type") == "reasoning" for item in data.get("output") or [])
+            cut_off = data.get("status") == "incomplete"
         elif body.get("stream"):
-            raw, tokens, used = await self._stream_chat(body, on_delta)
+            raw, tokens, used, thought, cut_off = await self._stream_chat(body, on_delta)
         else:
             data = await self._post_or_get("POST", "/chat/completions", body)
             try:
                 choice = data["choices"][0]
             except (KeyError, IndexError, TypeError):
                 raise ModelServerError("reply", "The server's answer had no choices in it.")
-            raw = (choice.get("message") or {}).get("content") or ""
+            message = choice.get("message") or {}
+            raw = message.get("content") or ""
+            thought = bool(message.get("reasoning_content") or message.get("reasoning"))
+            cut_off = choice.get("finish_reason") == "length"
             tokens = _chat_tokens(choice.get("logprobs"))
             used = (data.get("usage") or {}).get("completion_tokens", 0)
         seconds = time.monotonic() - started
         text = THINK_RE.sub("", raw).strip()
+        thought = thought or text != raw.strip() or raw.lstrip().startswith("<think>")
+        if raw.lstrip().startswith("<think>") and "</think>" not in raw:
+            text = ""   # the reply ended while still thinking
         return Reply(text=text, raw=raw, tokens=tokens, completion_tokens=used or len(tokens or []),
-                     seconds=seconds, route=route, payload=body)
+                     seconds=seconds, route=route, payload=body, thought=thought, cut_off=cut_off)
 
     async def _post_or_get(self, method: str, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
         try:
@@ -240,8 +261,9 @@ class ModelClient:
             raise ModelServerError("connect", f"The model server at {self.base_url} is not answering ({type(exc).__name__}).")
         return _json_or_raise(response.status_code, response.text)
 
-    async def _stream_chat(self, body: dict[str, Any], on_delta) -> tuple[str, list | None, int]:
+    async def _stream_chat(self, body: dict[str, Any], on_delta) -> tuple[str, list | None, int, bool, bool]:
         raw, tokens, used, saw_logprobs = "", [], 0, False
+        thought = cut_off = False
         try:
             async with self.http.stream("POST", self.base_url + "/chat/completions", json=body) as response:
                 if response.status_code >= 400:
@@ -259,7 +281,10 @@ class ModelClient:
                     if data.get("usage"):
                         used = data["usage"].get("completion_tokens", used)
                     for choice in data.get("choices") or []:
-                        piece = (choice.get("delta") or {}).get("content")
+                        delta = choice.get("delta") or {}
+                        thought = thought or bool(delta.get("reasoning_content") or delta.get("reasoning"))
+                        cut_off = cut_off or choice.get("finish_reason") == "length"
+                        piece = delta.get("content")
                         if piece:
                             raw += piece
                             if on_delta:
@@ -270,7 +295,7 @@ class ModelClient:
                             tokens.extend(got)
         except (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError, httpx.ReadError) as exc:
             raise ModelServerError("connect", f"The model server at {self.base_url} is not answering ({type(exc).__name__}).")
-        return raw, (tokens if saw_logprobs else None), used
+        return raw, (tokens if saw_logprobs else None), used, thought, cut_off
 
 
 def _json_or_raise(status: int, text: str) -> dict[str, Any]:

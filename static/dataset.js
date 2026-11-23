@@ -28,19 +28,33 @@
 
     function browse(input) {
         const body = h('div');
-        const go = (path) => act(null, async () => {
-            const data = await api('/api/browse?path=' + encodeURIComponent(path));
+        // With no path the picker opens at your start folder; `roots` asks for the drive list instead.
+        const go = (path, roots = false) => act(null, async () => {
+            const data = await api('/api/browse?path=' + encodeURIComponent(path) + (roots ? '&roots=true' : ''));
+            const isStart = data.path && data.path === data.start_folder;
             body.replaceChildren(
                 h('div', { class: 'row', style: 'margin-bottom:10px' },
                     h('code', { class: 'grow' }, data.path || 'Pick a starting place'),
-                    data.parent !== null ? h('button', { class: 'quiet small', onclick: () => go(data.parent) }, '↑ Up') : null,
+                    data.parent !== null ? h('button', { class: 'quiet small', onclick: () => go(data.parent, !data.parent) }, '↑ Up') : null,
                     data.path ? h('button', { class: 'small', onclick: () => { input.value = data.path; close(); openFolder(data.path); } }, 'Open this folder') : null),
+                h('div', { class: 'row', style: 'margin-bottom:10px' },
+                    data.path ? h('button', {
+                        class: 'quiet small', disabled: isStart, title: 'The folder picker will open here from now on',
+                        onclick: (e) => act(e.target, async () => {
+                            const saved = await api('/api/settings', 'PUT', { start_folder: data.path });
+                            App.settings = saved.settings;
+                            toast('The folder picker will start here from now on.');
+                            go(data.path);
+                        }),
+                    }, isStart ? '★ This is your start folder' : '☆ Start here every time') : null,
+                    data.start_folder && !isStart ? h('button', { class: 'quiet small', title: data.start_folder, onclick: () => go(data.start_folder) }, '★ Go to start folder') : null,
+                    data.path ? h('button', { class: 'quiet small', onclick: () => go('', true) }, 'Drives') : null),
                 h('div', { class: 'stack', style: 'max-height:55vh; overflow:auto' },
                     data.folders.length ? data.folders.map((f) => h('button', { class: 'quiet', style: 'width:100%; text-align:left', onclick: () => go(f.path) }, '📁 ', f.name))
                         : h('p', { class: 'hint' }, 'No folders in here.')));
         });
         const close = overlay(h('div', { class: 'modal', style: 'width:min(640px,100%)' }, h('h2', { style: 'margin-bottom:10px' }, 'Choose a dataset folder'), body), { center: true });
-        go(input.value.trim());
+        go(App.dataset.open ? '' : input.value.trim());
     }
 
     function openBar() {

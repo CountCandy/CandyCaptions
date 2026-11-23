@@ -17,7 +17,8 @@ from .config import load_json, save_json
 
 # key, name, what it holds
 BASE_FIELDS = [
-    ("quality", "Quality", "finish and defects: rough sketch or finished piece, watermark, signature, jpeg artifacts, blur"),
+    ("quality", "Quality", "finish (rough sketch or finished piece) and any defect that is plain to see, "
+                           "such as a watermark, signature, heavy compression blocks or blur; say \"no visible defects\" when there are none"),
     ("style", "Style and medium", "medium (digital, pencil, paint, 3D, photo), line work, colour, shading"),
     ("camera", "Camera and framing", "close-up, upper body or full body; angle from above, below or behind; depth of field"),
     ("subjects", "Subjects", "how many and what: solo, two girls and a cat"),
@@ -54,6 +55,8 @@ COMMON_RULES = [
     "The tags come from an automatic tagger and can be wrong. When a tag and the image disagree, the image wins.",
     "If a field has nothing to report, write \"none\".",
     "Quality records finish and defects as facts. Never write praise such as \"masterpiece\" or \"high quality\".",
+    "Report a defect only when you can point to where it is in the image. Soft focus, fog, depth of field, film grain "
+    "and dithered shading are part of the picture, not defects.",
     "Transcribe visible text exactly, in quotes, keeping line breaks.",
     "Describe nudity plainly and factually, with no euphemism, judgement or qualifiers such as \"artistic\" "
     "or \"tasteful\", and never explain it by art style, period or medium.",
@@ -96,7 +99,7 @@ DEFAULT_PREFILLS: list[dict[str, Any]] = [
         "rules": list(COMMON_RULES),
         "caption_rules": ["Never mention the art style, medium, line work, colouring or rendering."],
         "fields": _fields({
-            "quality": {"caption_note": "mention defects only, such as a watermark, signature, blur or jpeg artifacts; skip if there are none"},
+            "quality": {"caption_note": "mention defects only; skip this note if it reports none"},
             "style": {"in_caption": False},
         }),
         "toggles": _toggles(set(), {"use_trigger": "Begin the caption with {trigger}."}),

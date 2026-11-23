@@ -158,3 +158,23 @@ async def test_plain_errors_without_a_dataset_or_model(api):
     response = await api.get("/api/review")
     assert response.status_code == 409 and "Point me at a folder" in response.json()["detail"]
     assert (await api.post("/api/dataset/open", json={"path": "/no/such/folder"})).status_code == 404
+
+
+async def test_review_trusts_a_description_on_disk_over_a_stale_failure(api, dataset):
+    await run_batch(api)
+    image = server.state.project.store.image_by_rel("plain.png")
+    server.state.project.store.update_image(image["id"], status="failed", error="The model returned an empty caption.")
+    data = (await api.get("/api/review")).json()
+    assert data["totals"]["failed"] == 0 and len(data["rows"]) == 3
+    assert server.state.project.store.image(image["id"])["status"] == "done"
+
+
+async def test_folder_picker_opens_at_the_start_folder(api, dataset):
+    assert (await api.get("/api/browse")).json()["path"] == ""
+    saved = (await api.put("/api/settings", json={"start_folder": str(dataset.parent)})).json()
+    assert saved["settings"]["start_folder"] == str(dataset.parent)
+    opened = (await api.get("/api/browse")).json()
+    assert opened["path"] == str(dataset.parent) and "dataset" in [f["name"] for f in opened["folders"]]
+    assert (await api.get("/api/browse", params={"roots": "true"})).json()["path"] == ""      # the drive list is still reachable
+    await api.put("/api/settings", json={"start_folder": "/no/longer/there"})
+    assert (await api.get("/api/browse")).json()["path"] == ""

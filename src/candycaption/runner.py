@@ -9,6 +9,7 @@ if the model server stops answering the run pauses itself.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections import deque
 from typing import Any, Callable
@@ -18,6 +19,9 @@ from .dataset import Project
 from .pipeline import CaptionError, Captioner, build_snapshot, refresh_template
 from .signals import combine
 from .wordlists import load_wordlists
+
+
+logger = logging.getLogger(__name__)
 
 
 class Broadcaster:
@@ -288,6 +292,11 @@ class Runner:
             self.in_flight.pop(image_id, None)
             self._fail(image, str(exc))
             return
+        except Exception as exc:  # noqa: BLE001  one image must never take the whole run down
+            logger.exception("Unexpected error on %s", image["rel"])
+            self.in_flight.pop(image_id, None)
+            self._fail(image, f"Unexpected error ({type(exc).__name__}: {exc}). The full details are in the CandyCaption window.")
+            return
 
         self.in_flight.pop(image_id, None)
         self.done += 1
@@ -308,6 +317,10 @@ class Runner:
 
     def _fail(self, image: dict[str, Any], error: str) -> None:
         self.failed += 1
-        self.project.store.update_image(image["id"], status="failed", error=error)
+        if self.project.has_caption(image) and (self.project.store.image(image["id"]) or {}).get("status") == "done":
+            # Its caption was written before the fault, so keep the caption and note the fault.
+            self.project.store.update_image(image["id"], error=error)
+        else:
+            self.project.store.update_image(image["id"], status="failed", error=error)
         self._emit("image_failed", id=image["id"], rel=image["rel"], error=error)
         self._emit_state()

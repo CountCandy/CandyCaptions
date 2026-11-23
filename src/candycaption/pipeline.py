@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+import logging
 import time
 from typing import Any, Awaitable, Callable
 
@@ -34,6 +35,9 @@ FACTS_SCHEMA = {
     "properties": {"verdicts": {"type": "array", "items": {"type": "string", "enum": ["captured", "wrong", "missing"]}}},
     "required": ["verdicts"], "additionalProperties": False,
 }
+
+
+logger = logging.getLogger(__name__)
 
 
 class CaptionError(Exception):
@@ -111,7 +115,7 @@ class Captioner:
             fields = parse_fields(reply.text, self.prefill)
             if fields is not None:
                 return fields, reply
-        raise CaptionError("The model's reply was malformed or empty twice in a row.")
+        raise CaptionError(reply.why_empty() or "The model's reply was malformed or empty twice in a row.")
 
     async def compose(self, fields: dict[str, str]) -> tuple[str, float]:
         """Fields to one paragraph. Reruns once if banned words slip in and keeps the cleaner version."""
@@ -130,8 +134,9 @@ class Captioner:
             second = clean_caption(again.text)
             if second and (not caption or len(find_banned(second, self.prefill.get("banned_words") or [])) < len(hits)):
                 caption = second
+            reply = again if not caption else reply
         if not caption:
-            raise CaptionError("The model returned an empty caption.")
+            raise CaptionError(reply.why_empty() or "The model returned an empty caption.")
         return caption, time.monotonic() - started
 
     def checkable(self, fields: dict[str, str]) -> list[str]:
@@ -194,6 +199,17 @@ class Captioner:
         out.setdefault("template", {"items": []})
         return out
 
+    def safe_signals(self, image: dict[str, Any], fields: dict[str, str], reply: Reply | None,
+                     checks: dict[str, Any] | None) -> dict[str, Any]:
+        """Scoring must never cost a finished caption: a fault here is logged and leaves the image unflagged."""
+        try:
+            return self.signals_for(image, fields, reply, checks)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Scoring %s failed", image.get("rel"))
+            empty = {"available": False, "items": []}
+            return {"uncertain": dict(empty), "tags": dict(empty), "checks": {**empty, "values": {}},
+                    "template": {"items": []}, "error": f"{type(exc).__name__}: {exc}"}
+
     def score(self, signals: dict[str, Any]) -> float:
         return sig.combine(signals, self.app.get("score_weights") or {})[0]
 
@@ -214,29 +230,37 @@ class Captioner:
         fields, reply = await self.look(image, image_url, on_delta, extra)
         await stage("compose")
         caption, _ = await self.compose(fields)
-        if write:
-            self.project.write_caption(image, caption, "overwritten by a run")
         seconds = time.monotonic() - started
-
-        signals = self.signals_for(image, fields, reply, None)
-        mode = self.snapshot.get("field_checks", "off")
-        flagged = bool(signals["uncertain"]["items"] or signals["tags"]["items"])
-        checks = None
-        if mode == "all" or (mode == "flagged" and flagged):
-            await stage("check")
-            checks = await self.check(image_url, fields)
-            signals = self.signals_for(image, fields, reply, checks)
+        signals = self.safe_signals(image, fields, reply, None)
         result = {
             "fields": fields, "caption": caption, "signals": signals, "score": self.score(signals),
-            "seconds": seconds, "check_seconds": checks["seconds"] if checks else 0.0,
-            "tokens": reply.completion_tokens, "look_seconds": reply.seconds, "raw": reply.raw,
+            "seconds": seconds, "check_seconds": 0.0, "tokens": reply.completion_tokens,
+            "look_seconds": reply.seconds, "raw": reply.raw,
         }
         if write:
+            # The caption is done the moment it is written. Whatever happens in the checks
+            # below can add flags to it but can never turn it back into a failure.
+            self.project.write_caption(image, caption, "overwritten by a run")
             self.project.store.update_image(
                 image["id"], status="done", error=None, fields=fields, caption=caption, signals=signals,
-                score=result["score"], reviewed=0, seconds=seconds, check_seconds=result["check_seconds"],
+                score=result["score"], reviewed=0, seconds=seconds, check_seconds=0.0,
                 raw=reply.raw, snapshot_id=snapshot_id, run_id=run_id,
             )
+
+        mode = self.snapshot.get("field_checks", "off")
+        flagged = bool(signals["uncertain"]["items"] or signals["tags"]["items"])
+        if mode == "all" or (mode == "flagged" and flagged):
+            await stage("check")
+            try:
+                checks = await self.check(image_url, fields)
+            except ModelServerError as exc:
+                signals["checks"] = {"available": False, "items": [], "values": {}, "error": str(exc)}
+            else:
+                signals = self.safe_signals(image, fields, reply, checks)
+                result.update(signals=signals, score=self.score(signals), check_seconds=checks["seconds"])
+            if write:
+                self.project.store.update_image(image["id"], signals=signals, score=result["score"],
+                                                check_seconds=result["check_seconds"])
         return result
 
     async def recompose(self, image: dict[str, Any], fields: dict[str, str] | None = None, *,

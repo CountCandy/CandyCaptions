@@ -299,6 +299,7 @@
         panel.replaceChildren(h('div', { class: 'review' },
             h('div', null,
                 h('div', { class: 'row', style: 'margin-bottom:8px' }, h('div', { class: 'grow' }, search),
+                    h('button', { class: 'quiet small', title: 'Reload the queue from the dataset folder', onclick: (e) => act(e.target, async () => { await loadList(); await select(rows.some((r) => r.id === currentId) ? currentId : (rows.length ? rows[0].id : null)); }) }, '↻ Refresh'),
                     h('button', { class: 'quiet small', title: 'How filters work', onclick: () => { help.hidden = !help.hidden; } }, '?')),
                 help,
                 h('div', { class: 'chips', style: 'margin-bottom:8px' }, Object.keys(FLAGS).map((signal) => {
@@ -330,6 +331,10 @@
         };
         if (actions[key]) { event.preventDefault(); actions[key](); }
     });
+
+    const reloadSoon = debounce(() => { if (App.tab === 'review' && !$('.overlay') && !document.activeElement.matches('input, textarea')) act(null, async () => { await loadList(); renderList(); }); }, 1500);
+    on('image_done', reloadSoon);
+    on('image_failed', reloadSoon);
 
     App.tabs.review = {
         show: () => act(null, async () => {

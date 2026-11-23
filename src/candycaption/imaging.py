@@ -62,7 +62,8 @@ def prepare_bytes(path: Path, long_side: int, background: str = "#ffffff") -> by
     if long_side and max(img.size) > long_side:
         img.thumbnail((long_side, long_side), Image.LANCZOS)
     buffer = io.BytesIO()
-    img.save(buffer, "JPEG", quality=92)
+    # High quality and full colour resolution, so the copy the model sees adds no compression marks of its own.
+    img.save(buffer, "JPEG", quality=96, subsampling=0)
     return buffer.getvalue()
 
 

@@ -186,7 +186,8 @@ function needsDataset(panel) {
 
 function refreshHeader() {
     const s = App.settings || {};
-    $('#modelPillText').textContent = s.model ? s.model : 'no model chosen';
+    const taster = s.verifier_model && s.verifier_model !== s.model ? ` · Taste Tester: ${s.verifier_model}` : '';
+    $('#modelPillText').textContent = s.model ? `Captioner: ${s.model}${taster}` : 'no model chosen';
     $('#modelDot').classList.toggle('on', Boolean(s.model && App.caps.tested));
     $('#modelPill').title = s.model ? (App.caps.tested ? 'Connection tested' : 'Not tested yet. Open the Candy Shop tab') : 'Open the Candy Shop tab';
     const d = App.dataset;

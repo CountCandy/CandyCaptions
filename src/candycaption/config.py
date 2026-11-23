@@ -60,6 +60,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "uncertain_min_alt": 0.15,
     "check_threshold": 0.6,
     "recent": [],
+    # Where the folder picker opens, so it does not start from the drive list every time.
+    "start_folder": "",
 }
 
 

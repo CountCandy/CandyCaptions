@@ -403,15 +403,18 @@ async def fix_images(body: dict = Body(...)):
 
 
 @app.get("/api/browse")
-async def browse(path: str = ""):
+async def browse(path: str = "", roots: bool = False):
     """Folders under a path, for the folder picker."""
+    start = load_settings().get("start_folder") or ""
+    if not path and not roots and start and Path(start).is_dir():
+        path = start
     if not path:
-        roots = [str(Path.home())]
+        places = [str(Path.home())]
         if os.name == "nt":
-            roots += [f"{letter}:\\" for letter in string.ascii_uppercase if Path(f"{letter}:\\").exists()]
+            places += [f"{letter}:\\" for letter in string.ascii_uppercase if Path(f"{letter}:\\").exists()]
         else:
-            roots.append("/")
-        return {"path": "", "parent": None, "folders": [{"name": r, "path": r} for r in roots]}
+            places.append("/")
+        return {"path": "", "parent": None, "start_folder": start, "folders": [{"name": r, "path": r} for r in places]}
     here = Path(path).expanduser()
     if not here.is_dir():
         raise fail(404, f"{here} is not a folder.")
@@ -423,7 +426,7 @@ async def browse(path: str = ""):
     except PermissionError:
         pass
     parent = str(here.parent) if here.parent != here else ""
-    return {"path": str(here), "parent": parent, "folders": folders}
+    return {"path": str(here), "parent": parent, "start_folder": start, "folders": folders}
 
 
 def _thumb_dir(proj: Project) -> Path:
@@ -554,9 +557,13 @@ async def review_list(q: str = ""):
         show_reviewed = "reviewed:" in q.lower()
         show_all = "status:" in q.lower()
         for image in proj.store.images():
+            has_caption = proj.has_caption(image)
+            if image["status"] == "failed" and has_caption:
+                # A description exists on disk, and the files are the source of truth.
+                proj.store.update_image(image["id"], status="done", error=None)
+                image.update(status="done", error=None)
             if image["status"] == "failed":
                 totals["failed"] += 1
-            has_caption = proj.has_caption(image)
             if not has_caption and not (show_all or image["status"] == "failed"):
                 continue
             row = review_row(proj, image, settings, names)
