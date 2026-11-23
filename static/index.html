@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="candy">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CandyCaption — Sweet-Talking Captions</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 100 100%27%3E%3Ctext y=%27.9em%27 font-size=%2790%27%3E🍬%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="toast-container" id="toasts"></div>
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>CandyCaption</h1>
+                <p class="subtitle">Captions for your LoRA dataset, one piece at a time, with the doubtful ones sorted out 🍬</p>
+            </div>
+            <div class="header-right">
+                <span class="pill clickable" id="datasetPill" title="Open the Pantry tab">📁 no dataset open</span>
+                <span class="pill clickable" id="modelPill" title="Open the Candy Shop tab"><span class="dot" id="modelDot"></span><span id="modelPillText">no model chosen</span></span>
+                <button class="theme-toggle" id="themeToggle" title="Toggle theme">🍬</button>
+            </div>
+        </div>
+
+        <nav class="tabs" id="tabs">
+            <button class="tab" data-tab="connect">Candy Shop<span class="plain">Connect</span></button>
+            <button class="tab" data-tab="prefills">Recipe Box<span class="plain">Prefills</span></button>
+            <button class="tab" data-tab="bench">Taste Test<span class="plain">Test bench</span></button>
+            <button class="tab" data-tab="dataset">Pantry<span class="plain">Dataset</span></button>
+            <button class="tab" data-tab="run">Candy Factory<span class="plain">Run</span></button>
+            <button class="tab" data-tab="review">Sorting Table<span class="count" id="reviewCount" hidden></span><span class="plain">Review</span></button>
+            <button class="tab" disabled title="Arrives in v2">Flavour Profile<span class="plain">Style · v2</span></button>
+        </nav>
+
+        <section class="panel" id="panel-connect"></section>
+        <section class="panel" id="panel-prefills"></section>
+        <section class="panel" id="panel-bench"></section>
+        <section class="panel" id="panel-dataset"></section>
+        <section class="panel" id="panel-run"></section>
+        <section class="panel" id="panel-review"></section>
+    </div>
+
+    <script src="/static/core.js"></script>
+    <script src="/static/connect.js"></script>
+    <script src="/static/prefills.js"></script>
+    <script src="/static/recipe.js"></script>
+    <script src="/static/bench.js"></script>
+    <script src="/static/dataset.js"></script>
+    <script src="/static/run.js"></script>
+    <script src="/static/review.js"></script>
+    <script src="/static/main.js"></script>
+</body>
+</html>
