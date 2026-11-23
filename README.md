@@ -9,28 +9,130 @@ For every image it writes `<image>_nl.txt` next to the image and its tag file `<
 layout BluFlow reads. Remember `caption_mode = "mixed"` in BluFlow's `[dataset.caption]`, or it trains on
 tags only.
 
-## Start
+## What you need
 
-You need [uv](https://docs.astral.sh/uv/) and a running model server (LM Studio, Unsloth Studio, llama.cpp
-or vLLM) with a vision model loaded. CandyCaption does not load or host models.
+- Windows 11 or Linux with an NVIDIA GPU. CandyCaption itself is light; the GPU is for the model server.
+- [Git](https://git-scm.com/downloads), to download and update the app.
+- [uv](https://docs.astral.sh/uv/getting-started/installation/), which installs Python and the app's
+  dependencies by itself.
+- A model server with a vision model. These instructions use [LM Studio](https://lmstudio.ai/download).
+  Unsloth Studio, llama.cpp server and vLLM work too.
+
+CandyCaption does not load or host models. The model server does that.
+
+## Install
+
+Open a terminal (PowerShell on Windows) in the folder where you want the app to live:
+
+```
+git clone https://github.com/CountCandy/CandyCaptions.git
+cd CandyCaptions
+uv sync
+```
+
+`git clone` downloads the app into a new `CandyCaptions` folder. `uv sync` installs its dependencies into
+a `.venv` folder inside it; the first time takes a minute.
+
+## Download the models
+
+The design targets a 96 GB card, which fits a captioner and a separate verifier at 8-bit with room for
+parallel requests. On a smaller card, use one model for both jobs or pick a smaller quantization.
+
+| Role | Model | LM Studio key |
+| --- | --- | --- |
+| Captioner | Gemma 4 31B, the family MOSS-Image's own captions came from | `google/gemma-4-31b` |
+| Verifier (optional) | Qwen3.5-27B, a different family so it does not share Gemma's blind spots | `qwen/qwen3.5-27b` |
+
+Check on the model's LM Studio page that the verifier you pick accepts images. Field checks send it one.
+
+1. Install LM Studio and open it once. That also installs its command-line tool, `lms`.
+2. Download the models. Either search for them in LM Studio's Discover tab and pick the 8-bit (Q8) file,
+   or use the terminal, which lists the quantizations to choose from:
+
+   ```
+   lms get google/gemma-4-31b --always-show-download-options
+   lms get qwen/qwen3.5-27b --always-show-download-options
+   ```
+
+3. Load them. The identifier is the name CandyCaption will show in its model dropdowns:
+
+   ```
+   lms load google/gemma-4-31b --identifier captioner --gpu max --context-length 16384
+   lms load qwen/qwen3.5-27b --identifier verifier --gpu max --context-length 16384
+   ```
+
+   You can also load them in the app. `lms ls` lists what is on disk and `lms ps` what is loaded.
+4. In LM Studio's settings for each loaded model, turn **thinking off** and set **Max Concurrent
+   Predictions** to the Batch Size you plan to use in CandyCaption (4 is the default for both).
+5. Start the server: `lms server start`, or the Developer tab in the app. It listens on
+   http://localhost:1234/v1.
+
+The context length has to hold one image, the instructions and the reply for every request in flight.
+`scripts/probe_lmstudio.py` (below) measures what one image costs and whether LM Studio splits the context
+between parallel requests, so treat 16384 as a starting point.
+
+## Run
 
 - **Windows:** double-click `run.bat`. The page opens at http://localhost:8200 once the app is up.
 - **Linux:** `./run.sh`
 
-Then work through the tabs from left to right:
+Then work through the tabs from left to right. In the Candy Shop tab, press **Test connection** before the
+first run: it sends one tiny image and records what your server supports.
 
 | Tab | Plain name | What you do there |
 | --- | --- | --- |
-| Candy Shop | Connect | Pick the backend, models and the optional verifier. **Test connection** sends one tiny image and records what the server supports. |
+| Candy Shop | Connect | Pick the backend, the captioner and the optional verifier, then Test connection. |
 | Recipe Box | Prefills | Edit the Style, Character and Concept prefills: prompts, rules, fields and their order, option toggles, banned words. |
 | Taste Test | Test bench | Pin 5 to 10 hard images, write a few facts for each, and compare recipe versions on them before a full run. |
 | Pantry | Dataset | Open a folder. Health checks run at once. Find and replace lives here too. |
 | Candy Factory | Run | Start, pause, resume and stop the batch, and watch it live. |
 | Sorting Table | Review | The doubtful captions, worst first, with the field in doubt named. Fix them by hand or by talking to the model. |
 
-### Try it without a GPU
+## Update
 
-A small fake model server is included. It cannot see images, but it answers like a model would:
+### The app
+
+Close CandyCaption first (close its window, or press Ctrl+C in its terminal). Then, in the `CandyCaptions`
+folder:
+
+```
+git pull
+uv sync
+```
+
+`git pull` downloads the latest version from GitHub and `uv sync` brings the dependencies in line with it.
+Start the app again with `run.bat` or `./run.sh`.
+
+- Your settings, prefills, project stores and backups live in the `data` folder, which Git ignores, so an
+  update never touches them. Your datasets are outside the app folder altogether.
+- If `git pull` says your local changes would be overwritten, you have edited a file that is part of the
+  app. `git stash` sets your edits aside, `git pull` then works, and `git stash pop` puts them back.
+- `git log -1` shows which version you are on. To go back to an earlier one, `git checkout <commit>`
+  then `uv sync`; `git switch main`, `git pull` and `uv sync` return you to the latest.
+
+### The models
+
+Models do not update themselves. To move to a newer upload or another quantization of the same model, run
+`lms get` again (or download it in the Discover tab), then unload the old one and load the new one:
+
+```
+lms get google/gemma-4-31b --always-show-download-options
+lms unload captioner
+lms load google/gemma-4-31b --identifier captioner --gpu max --context-length 16384
+```
+
+Keeping the same identifier means CandyCaption needs no change. Press **Test connection** again after any
+model or LM Studio update, because what the server supports can change. Old model files you no longer
+want can be deleted from LM Studio's My Models page. LM Studio itself updates from inside the app.
+
+A new model changes how captions come out. Rerun your test set in the Taste Test tab before captioning a
+whole dataset with it.
+
+## Trying the app with a fake model server
+
+Real use always has a GPU behind it. For working on the app itself, and for the automated tests, a small
+fake model server is included. It cannot see
+images, but it answers like a model would:
 
 ```
 uv run candycaption mock            # fake server on http://localhost:1234/v1
@@ -104,7 +206,7 @@ source of truth.
 
 ```
 uv sync --extra dev
-uv run pytest          # every test talks to the mock model server; no GPU needed
+uv run pytest          # every test talks to the fake model server, so GitHub can run them
 ```
 
 ```
