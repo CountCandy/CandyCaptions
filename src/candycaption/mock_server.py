@@ -171,7 +171,10 @@ def create_app(*, chat_logprobs: bool = True, responses: bool = True, responses_
 
         if "notes:" in lower:
             notes = text.split("Notes:", 1)[1]
-            values = [line.split(": ", 1)[1].strip().rstrip(".") for line in notes.strip().splitlines() if ": " in line]
+            # Like a model that follows the note, leave out a "defects only" note that reports none.
+            lines = [line for line in notes.strip().splitlines()
+                     if ": " in line and not ("defects only" in line and "no visible defects" in line)]
+            values = [line.split(": ", 1)[1].strip().rstrip(".") for line in lines]
             banned = "MOCK_BANNED" in notes and "Rewrite without" not in text
             sentence = ". ".join(v[0].upper() + v[1:] for v in values if v) + "."
             sentence = sentence.replace(" MOCK_BANNED", "")
