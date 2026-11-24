@@ -245,3 +245,36 @@ def test_saved_builtin_recipes_gain_the_american_rule_and_clean_quality_phrases_
     style["rules"].remove("Write in American English.")
     save_json("prefills.json", [style])
     assert "Write in American English." not in load_prefills()[0]["rules"]
+
+
+@pytest.mark.parametrize("value,clean", [
+    ("finished piece, no visible defects", True),
+    ("The piece is finished with no visible watermark, signature, or blur", True),
+    ("digital render is finished with no visible watermark or signature and no blur", True),
+    ("Finished piece. No watermark, signature, blur, or defects are visible", False),      # odd phrasing: kept, to be safe
+    ("finished piece, small signature in the corner", False),
+    ("rough sketch, no watermark", False),
+    ("finished piece, watermark in the lower right, no blur", False),
+    ("heavy jpeg artifacts", False),
+])
+def test_a_clean_quality_note_is_recognized(value, clean):
+    from candycaption.prefills import reports_no_defects
+
+    assert reports_no_defects(value) is clean
+
+
+def test_a_clean_defects_only_note_never_reaches_the_caption_step():
+    clean = dict(FIELDS, quality="finished piece, no visible watermark, signature, or blur")
+    style = compose_messages(snapshot("style"), clean)[1]["content"]
+    assert "Quality" not in style and "watermark" not in style
+    flawed = compose_messages(snapshot("style"), dict(FIELDS, quality="finished piece, watermark lower right"))[1]["content"]
+    assert "watermark lower right" in flawed
+    # Recipes that keep the whole Quality field are untouched.
+    assert "no visible watermark" in compose_messages(snapshot("character", trigger="k"), clean)[1]["content"]
+
+
+def test_captions_come_out_in_american_spelling():
+    from candycaption.pipeline import clean_caption
+
+    assert clean_caption("Grey stone walls in the centre, with a coloured banner.") == "Gray stone walls in the center, with a colored banner."
+    assert clean_caption("A greyhound runs.") == "A greyhound runs."

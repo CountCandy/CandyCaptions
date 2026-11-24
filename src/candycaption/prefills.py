@@ -300,13 +300,48 @@ def look_messages(snapshot: dict[str, Any], image_url: str, tags: str, filename:
     ]
 
 
+_CLEAN_START = re.compile(r"^(no|not|without|free of|free from|lacks?|none|nothing|n/a)\b")
+_CLEAN_WHOLE = re.compile(r"^( the| this| a)?( piece| image| picture| render| digital render| illustration| artwork| work)?"
+                          r"( is| looks)?( a)?( finished| complete| completed| clean| polished)*"
+                          r"( piece| render| work| image| illustration)?$")
+_DEFECT_NOUNS = {"defect", "defects", "watermark", "watermarks", "signature", "signatures", "blur", "artifacts",
+                 "jpeg artifacts", "compression artifacts", "compression blocks", "noise", "text", "visible defects"}
+
+
+def reports_no_defects(value: str) -> bool:
+    """True when a Quality note only says the image is finished and clean.
+
+    "finished piece, no visible watermark, signature, or blur" is clean;
+    "finished piece, small signature in the corner" is not.
+    """
+    after_no = False
+    for clause in re.split(r"[,;.]|\band\b|\bor\b|\bwith\b", value.lower()):
+        clause = clause.strip()
+        if not clause:
+            continue
+        if _CLEAN_START.match(clause):
+            after_no = True
+        elif after_no and clause in _DEFECT_NOUNS:
+            continue                      # still inside the "no watermark, signature, or blur" list
+        elif _CLEAN_WHOLE.match(" " + clause):
+            after_no = False
+        else:
+            return False
+    return True
+
+
 def caption_fields(prefill: dict[str, Any], fields: dict[str, str]) -> list[tuple[dict[str, Any], str]]:
     """The fields this prefill lets into the caption, in its order, skipping empty ones."""
     out = []
     for item in prefill["fields"]:
         value = str(fields.get(item["key"], "") or "").strip()
-        if item.get("in_caption") and value and value.lower().strip(". ") not in ("none", "n/a", "nothing"):
-            out.append((item, value))
+        if not item.get("in_caption") or not value or value.lower().strip(". ") in ("none", "n/a", "nothing"):
+            continue
+        # A "defects only" field with no defects to report stays out, so the model cannot restate
+        # "no watermark, signature, or blur" as a sentence of the caption.
+        if "defects only" in (item.get("caption_note") or "").lower() and reports_no_defects(value):
+            continue
+        out.append((item, value))
     return out
 
 

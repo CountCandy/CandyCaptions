@@ -11,6 +11,7 @@ import asyncio
 import copy
 import json
 import logging
+import re
 import time
 from typing import Any, Awaitable, Callable
 
@@ -65,8 +66,27 @@ DANGLING = {"a", "an", "and", "are", "as", "at", "behind", "by", "for", "from", 
             "on", "or", "over", "that", "the", "their", "to", "under", "was", "while", "with"}
 
 
+# The recipes ask for American English; some models slip anyway, so the common cases are fixed here.
+AMERICAN = {"grey": "gray", "greys": "grays", "greyish": "grayish", "colour": "color", "colours": "colors",
+            "coloured": "colored", "colourful": "colorful", "colouring": "coloring", "centre": "center",
+            "centres": "centers", "centred": "centered", "armour": "armor", "armoured": "armored",
+            "jewellery": "jewelry", "moustache": "mustache", "theatre": "theater", "fibre": "fiber",
+            "harbour": "harbor", "neighbouring": "neighboring", "favourite": "favorite", "vapour": "vapor",
+            "travelling": "traveling", "kneeling": "kneeling", "plough": "plow", "pyjamas": "pajamas",
+            "symbolise": "symbolize", "emphasise": "emphasize", "stylised": "stylized", "towards": "toward"}
+_AMERICAN_RE = re.compile(r"\b(" + "|".join(AMERICAN) + r")\b", re.I)
+
+
+def american(text: str) -> str:
+    def swap(match: re.Match) -> str:
+        word = match.group(0)
+        new = AMERICAN[word.lower()]
+        return new.capitalize() if word[0].isupper() else new
+    return _AMERICAN_RE.sub(swap, text)
+
+
 def clean_caption(text: str, cut_off: bool = False) -> str:
-    text = " ".join(text.split())
+    text = american(" ".join(text.split()))
     # Some models break the last sentence off to stay under the word limit ("...illuminated by.").
     last = text.rstrip(".!?\"' ").rsplit(" ", 1)[-1].lower()
     if last in DANGLING and ". " in text:
