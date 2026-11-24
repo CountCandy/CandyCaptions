@@ -25,10 +25,14 @@ async def run_bench(project: Project, app_settings: dict[str, Any], client: Mode
     captioner = Captioner(project, client, app_settings, snapshot, load_wordlists())
     pins = project.store.testset()
     results = []
-    for number, (image_id, facts) in enumerate(pins.items(), 1):
-        image = project.store.image(image_id)
+    from .store import natural_key
+
+    ordered = sorted(((project.store.image(i), facts) for i, facts in pins.items()),
+                     key=lambda pair: natural_key(pair[0]["rel"]) if pair[0] else [])
+    for number, (image, facts) in enumerate(ordered, 1):
         if not image or image["missing"]:
             continue
+        image_id = image["id"]
         publish({"type": "test_progress", "label": label, "done": number - 1, "total": len(pins), "rel": image["rel"]})
         entry: dict[str, Any] = {"image_id": image_id, "rel": image["rel"], "facts": facts}
         try:

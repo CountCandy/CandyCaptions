@@ -68,7 +68,8 @@ COMPOSE_PROMPT = (
     "Follow the order of the notes. Use plain declarative sentences. Use only what the notes state, and keep "
     "their concrete details (colors, counts, objects, expressions, what is where); when space is short, cut "
     "filler words before you cut a fact. "
-    "skip any note that says \"none\". Do not mention notes, fields or tags. Reply with the paragraph only."
+    "skip any note that says \"none\". Do not mention notes, fields or tags. End on a complete sentence: if you are "
+    "running long, stop one sentence early instead of breaking one off. Reply with the paragraph only."
 )
 
 COMMON_TOGGLES = [
@@ -258,8 +259,15 @@ def placeholder_values(snapshot: dict[str, Any], tags: str = "", filename: str =
     }
 
 
+KNOWN_FACTS = (
+    "Known facts about this image, from the person who made the dataset: {note}\n"
+    "Treat these as true even where the image is hard to read, and use their words for what things and "
+    "characters are called. A name given here is not a guess."
+)
+
+
 def look_messages(snapshot: dict[str, Any], image_url: str, tags: str, filename: str,
-                  http_url: str | None = None) -> list[dict[str, Any]]:
+                  http_url: str | None = None, note: str = "") -> list[dict[str, Any]]:
     """Fixed text first and the image last, so the server can reuse the shared opening."""
     prefill = snapshot["prefill"]
     values = placeholder_values(snapshot, tags, filename)
@@ -271,6 +279,8 @@ def look_messages(snapshot: dict[str, Any], image_url: str, tags: str, filename:
         "Reply with one JSON object that has exactly these keys, each a string.",
     ])
     tag_text = f"Tags from the tagger (hints, may be wrong): {tags}" if tags else "No tags are available for this image."
+    if note.strip():
+        tag_text += "\n\n" + KNOWN_FACTS.format(note=note.strip())
     return [
         {"role": "system", "content": system},
         {"role": "user", "content": [text_part(tag_text), image_part(image_url, http_url)]},
@@ -287,7 +297,8 @@ def caption_fields(prefill: dict[str, Any], fields: dict[str, str]) -> list[tupl
     return out
 
 
-def compose_messages(snapshot: dict[str, Any], fields: dict[str, str], avoid: list[str] | None = None) -> list[dict[str, Any]]:
+def compose_messages(snapshot: dict[str, Any], fields: dict[str, str], avoid: list[str] | None = None,
+                     note: str = "") -> list[dict[str, Any]]:
     prefill = snapshot["prefill"]
     values = placeholder_values(snapshot)
     banned = [w for w in prefill.get("banned_words") or [] if w.strip()]
@@ -297,6 +308,8 @@ def compose_messages(snapshot: dict[str, Any], fields: dict[str, str], avoid: li
     ]
     if banned:
         parts.append("Never use these words or phrases: " + ", ".join(banned) + ".")
+    if note.strip():
+        parts.append(KNOWN_FACTS.format(note=note.strip()))
     if avoid:
         parts.append("Your last attempt used banned wording. Rewrite without: " + ", ".join(avoid) + ".")
     notes = []

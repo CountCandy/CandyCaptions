@@ -241,10 +241,15 @@ async def duplicate_prefill(prefill_id: str, body: dict = Body(...)):
 
 
 @app.post("/api/prefills/{prefill_id}/reset")
-async def reset_prefill(prefill_id: str):
+async def reset_prefill(prefill_id: str, body: dict = Body(default={})):
     default = default_prefill(prefill_id)
     if default is None:
         raise fail(404, "Only the Style, Character and Concept prefills have defaults to reset to.")
+    current = get_prefill(prefill_id)
+    if body.get("keep_lengths", True):
+        # A reset is for getting the latest wording; the word range and preset you chose stay.
+        for key in ("min_words", "max_words", "preset"):
+            default[key] = current.get(key, default[key])
     prefills = [default if p["id"] == prefill_id else p for p in load_prefills()]
     save_prefills(prefills)
     return {"prefills": prefills}
@@ -421,7 +426,7 @@ async def browse(path: str = "", roots: bool = False):
         raise fail(404, f"{here} is not a folder.")
     folders = []
     try:
-        for child in sorted(here.iterdir(), key=lambda p: p.name.lower()):
+        for child in sorted(here.iterdir(), key=lambda p: natural_key(p.name)):
             if child.is_dir() and not child.name.startswith((".", "$")):
                 folders.append({"name": child.name, "path": str(child)})
     except PermissionError:
@@ -530,7 +535,7 @@ def review_row(proj: Project, image: dict[str, Any], settings: dict[str, Any], n
         "id": image["id"], "rel": image["rel"], "caption": caption, "tags": tags, "score": score, "reasons": reasons,
         "reviewed": bool(image["reviewed"]), "status": image["status"], "error": image["error"],
         "words": len(caption.split()), "tokens": proj.token_count(image, settings, tags, caption),
-        "fields": image["fields"],
+        "fields": image["fields"], "note": image.get("note") or "",
     }
     if detail:
         snapshot = proj.store.snapshot(image["snapshot_id"])
@@ -546,7 +551,7 @@ def review_row(proj: Project, image: dict[str, Any], settings: dict[str, Any], n
 
 
 @app.get("/api/review")
-async def review_list(q: str = "", sort: str = "score"):
+async def review_list(q: str = "", sort: str = "name"):
     proj, settings, names = project(), load_settings(), field_names()
     try:
         matches = compile_filter(q)
@@ -664,7 +669,10 @@ async def regenerate(image_id: int, body: dict = Body(default={})):
     if run.busy or state.bench_busy:
         raise fail(409, "A run is going. Regenerate once it has finished or paused.")
     run.app = load_settings()
-    run.start(image_ids={image_id}, extra=(body.get("extra") or "").strip() or None)
+    # The note is kept with the image; sending an empty one clears it.
+    note = " ".join((body.get("extra") or "").split())
+    project().store.update_image(image_id, note=note)
+    run.start(image_ids={image_id})
     await run.wait()
     image = image_or_404(image_id)
     if image["status"] == "failed":
@@ -782,6 +790,7 @@ def bench_payload() -> dict[str, Any]:
         image = proj.store.image(image_id)
         if image and not image["missing"]:
             pins.append({"id": image_id, "rel": image["rel"], "facts": facts})
+    pins.sort(key=lambda pin: natural_key(pin["rel"]))
     return {"pins": pins, "runs": [summarize(r) for r in proj.store.test_runs()], "busy": state.bench_busy}
 
 

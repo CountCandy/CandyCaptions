@@ -198,6 +198,19 @@ function overlay(content, { center = false, onclose } = {}) {
     return close;
 }
 
+// Names compare the way people read them: "ta (2)" before "ta (16)".
+const byName = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+
+// Show one image large. `actions` are extra buttons for the place it was opened from.
+function viewImage(id, rel, actions = []) {
+    let close = () => {};
+    const buttons = actions.map(([label, fn]) => h('button', { class: 'quiet small', onclick: () => { close(); fn(); } }, label));
+    close = overlay(h('div', { class: 'modal', style: 'width:min(1500px,100%)' },
+        h('div', { class: 'spread', style: 'margin-bottom:10px' }, h('b', null, rel),
+            h('span', { class: 'row' }, buttons, h('button', { class: 'quiet small', onclick: () => close() }, 'Close'))),
+        h('img', { class: 'zoom', src: thumbUrl(id, 'full'), alt: rel })), { center: true });
+}
+
 // --- Tabs ---
 function showTab(name) {
     App.tab = name;

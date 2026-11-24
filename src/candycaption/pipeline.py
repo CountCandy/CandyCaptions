@@ -61,8 +61,16 @@ def build_snapshot(project: Project, app_settings: dict[str, Any]) -> dict[str, 
     }
 
 
+DANGLING = {"a", "an", "and", "are", "as", "at", "behind", "by", "for", "from", "in", "into", "is", "its", "near", "of",
+            "on", "or", "over", "that", "the", "their", "to", "under", "was", "while", "with"}
+
+
 def clean_caption(text: str, cut_off: bool = False) -> str:
     text = " ".join(text.split())
+    # Some models break the last sentence off to stay under the word limit ("...illuminated by.").
+    last = text.rstrip(".!?\"' ").rsplit(" ", 1)[-1].lower()
+    if last in DANGLING and ". " in text:
+        text = text[:text.rstrip(".!? ").rfind(". ") + 1]
     if cut_off and text and text[-1] not in ".!?\"'":
         # The reply hit the token limit mid-sentence: keep only the complete sentences.
         end = max(text.rfind(". "), text.rfind("! "), text.rfind("? "))
@@ -98,7 +106,8 @@ class Captioner:
     def look_request(self, image: dict[str, Any], image_url: str, snapshot: dict[str, Any] | None = None):
         """(route, body) of the look request, exactly as it will be sent."""
         snapshot = snapshot or self.snapshot
-        messages = look_messages(snapshot, image_url, self.project.read_tags(image), image["rel"], self._http_url(image))
+        messages = look_messages(snapshot, image_url, self.project.read_tags(image), image["rel"],
+                                 self._http_url(image), image.get("note") or "")
         return self.client.build(
             snapshot["model"], messages, sampling=snapshot["sampling"],
             max_tokens=snapshot["sampling"].get("max_tokens_fields", 800),
@@ -108,8 +117,9 @@ class Captioner:
     async def look(self, image: dict[str, Any], image_url: str, on_delta=None,
                    extra: str | None = None) -> tuple[dict[str, str], Reply]:
         snapshot = self.snapshot
-        if extra:
-            snapshot = dict(snapshot, extra_instructions=(snapshot.get("extra_instructions", "") + "\n" + extra).strip())
+        if extra is not None:
+            # What the user says about this one image is kept with the image and used every time.
+            image = dict(image, note=extra)
         for attempt in range(2):
             route, body = self.look_request(image, image_url, snapshot)
             if route != "chat" or on_delta is None:
@@ -121,7 +131,7 @@ class Captioner:
                 return fields, reply
         raise CaptionError(reply.why_empty() or "The model's reply was malformed or empty twice in a row.")
 
-    async def compose(self, fields: dict[str, str]) -> tuple[str, float]:
+    async def compose(self, fields: dict[str, str], note: str = "") -> tuple[str, float]:
         """Fields to one paragraph. Reruns once if banned words slip in and keeps the cleaner version."""
         if not caption_fields(self.prefill, fields):
             raise CaptionError("No field has anything to put in a caption.")
@@ -129,12 +139,12 @@ class Captioner:
         # Room for the longest caption the recipe asks for (about 1.4 tokens a word), with a margin.
         limit = max(int(sampling.get("max_tokens_compose", 200)), int(self.prefill.get("max_words", 70) * 1.8) + 40)
         started = time.monotonic()
-        reply = await self.client.complete(self.snapshot["model"], compose_messages(self.snapshot, fields),
+        reply = await self.client.complete(self.snapshot["model"], compose_messages(self.snapshot, fields, None, note),
                                            sampling=sampling, max_tokens=limit)
         caption = clean_caption(reply.text, reply.cut_off)
         hits = find_banned(caption, self.prefill.get("banned_words") or [])
         if hits or not caption:
-            again = await self.client.complete(self.snapshot["model"], compose_messages(self.snapshot, fields, hits or None),
+            again = await self.client.complete(self.snapshot["model"], compose_messages(self.snapshot, fields, hits or None, note),
                                                sampling=sampling, max_tokens=limit)
             second = clean_caption(again.text, again.cut_off)
             if second and (not caption or len(find_banned(second, self.prefill.get("banned_words") or [])) < len(hits)):
@@ -234,7 +244,8 @@ class Captioner:
         await stage("look")
         fields, reply = await self.look(image, image_url, on_delta, extra)
         await stage("compose")
-        caption, _ = await self.compose(fields)
+        note = extra if extra is not None else (image.get("note") or "")
+        caption, _ = await self.compose(fields, note)
         seconds = time.monotonic() - started
         signals = self.safe_signals(image, fields, reply, None)
         result = {
@@ -249,7 +260,7 @@ class Captioner:
             self.project.store.update_image(
                 image["id"], status="done", error=None, fields=fields, caption=caption, signals=signals,
                 score=result["score"], reviewed=0, seconds=seconds, check_seconds=0.0,
-                raw=reply.raw, snapshot_id=snapshot_id, run_id=run_id,
+                raw=reply.raw, snapshot_id=snapshot_id, run_id=run_id, note=note,
             )
 
         mode = self.snapshot.get("field_checks", "off")
@@ -274,7 +285,7 @@ class Captioner:
         fields = fields or image.get("fields")
         if not fields:
             raise CaptionError("This image has no stored fields to compose from.")
-        caption, _ = await self.compose(fields)
+        caption, _ = await self.compose(fields, image.get("note") or "")
         self.project.write_caption(image, caption, reason)
         signals = self.signals_for(image, fields, None, None, image.get("signals"))
         values = {"fields": fields, "caption": caption, "signals": signals, "score": self.score(signals), "status": "done", "error": None}
@@ -303,7 +314,7 @@ class Captioner:
         new_fields = parse_fields(reply.text, self.prefill)
         if new_fields is None:
             raise CaptionError("The model's reply was not a usable set of fields. Try rephrasing.")
-        new_caption, _ = await self.compose(new_fields)
+        new_caption, _ = await self.compose(new_fields, image.get("note") or "")
         return {"fields": new_fields, "caption": new_caption, "assistant": reply.text}
 
     async def score_facts(self, caption: str, facts: list[str]) -> list[str]:

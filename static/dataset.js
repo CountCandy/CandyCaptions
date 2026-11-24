@@ -4,6 +4,7 @@
     const panel = $('#panel-dataset');
     let filter = null;     // health check key, or null for everything
     let shown = 240;
+    let order = localStorage.getItem('pantryOrder') || 'az';
     let changes = null;    // find-and-replace preview
 
     async function openFolder(path, button) {
@@ -114,11 +115,23 @@
 
     function grid() {
         const d = App.dataset;
-        const images = filter ? d.images.filter((i) => i.health.some((b) => b.check === filter)) : d.images;
+        const images = (filter ? d.images.filter((i) => i.health.some((b) => b.check === filter)) : d.images).slice();
+        const sorters = {
+            az: (a, b) => byName(a.rel, b.rel),
+            za: (a, b) => byName(b.rel, a.rel),
+            todo: (a, b) => a.has_caption - b.has_caption || byName(a.rel, b.rel),
+            problems: (a, b) => b.health.length - a.health.length || byName(a.rel, b.rel),
+        };
+        images.sort(sorters[order] || sorters.az);
         return h('div', { class: 'card' },
             h('div', { class: 'spread', style: 'margin-bottom:10px' },
                 h('h2', null, filter ? `${images.length} images: ${d.health_checks[filter].name.toLowerCase()}` : 'All images'),
-                h('span', { class: 'hint' }, '★ pins an image to the Sampler Box (test set). Click a captioned image to review it.')),
+                h('span', { class: 'row' },
+                    h('span', { class: 'hint' }, 'Click an image to see it large. ★ pins it to the Sampler Box (test set).'),
+                    h('label', { style: 'margin:0' }, 'Order'),
+                    h('select', { style: 'width:auto', onchange: (e) => { order = e.target.value; localStorage.setItem('pantryOrder', order); render(); } },
+                        [['az', 'File name, A to Z'], ['za', 'File name, Z to A'], ['todo', 'Not captioned first'], ['problems', 'Most freshness notes first']]
+                            .map(([value, label]) => h('option', { value, selected: order === value }, label))))),
             h('div', { class: 'thumbs' }, images.slice(0, shown).map((image) => {
                 const unreadable = image.health.some((b) => b.check === 'unreadable');
                 const pin = h('button', {
@@ -127,7 +140,7 @@
                         act(null, async () => { await api('/api/test/pin', 'POST', { id: image.id, pinned: !image.pinned }); image.pinned = !image.pinned; pin.classList.toggle('on', image.pinned); });
                     },
                 }, '★');
-                return h('div', { class: 'thumb', title: `${image.rel} · ${image.width}×${image.height}`, onclick: () => { if (image.has_caption) App.tabs.review.open(image.id); } },
+                return h('div', { class: 'thumb', title: `${image.rel} · ${image.width}×${image.height}`, onclick: () => { if (!unreadable) viewImage(image.id, image.rel, image.has_caption ? [['Open in the Sorting Table', () => App.tabs.review.open(image.id)]] : []); } },
                     unreadable ? h('div', { style: 'aspect-ratio:1; display:grid; place-items:center', class: 'muted' }, 'cannot be read') : h('img', { src: thumbUrl(image.id), loading: 'lazy' }),
                     unreadable ? null : pin,
                     image.has_caption ? h('span', { class: 'chip good state', title: 'Has a description' }, '✓') : null,

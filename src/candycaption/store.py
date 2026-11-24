@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS images (
     size INTEGER, mtime REAL, sha TEXT, phash TEXT, health TEXT,
     status TEXT DEFAULT 'pending', error TEXT, fields TEXT, caption TEXT,
     snapshot_id INTEGER, run_id INTEGER, signals TEXT, score REAL DEFAULT 0,
-    reviewed INTEGER DEFAULT 0, seconds REAL, check_seconds REAL, raw TEXT, missing INTEGER DEFAULT 0
+    reviewed INTEGER DEFAULT 0, seconds REAL, check_seconds REAL, raw TEXT, missing INTEGER DEFAULT 0, note TEXT
 );
 CREATE TABLE IF NOT EXISTS snapshots (id INTEGER PRIMARY KEY, created REAL, data TEXT);
 CREATE TABLE IF NOT EXISTS history (
@@ -75,6 +75,9 @@ class Store:
         self._db.row_factory = sqlite3.Row
         with self._lock:
             self._db.executescript(SCHEMA)
+            # Stores made before per-image notes existed get the column added.
+            if "note" not in {row["name"] for row in self._db.execute("PRAGMA table_info(images)")}:
+                self._db.execute("ALTER TABLE images ADD COLUMN note TEXT")
             self._db.commit()
         self.set_meta("folder", str(self.folder))
 

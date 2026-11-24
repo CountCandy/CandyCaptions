@@ -78,7 +78,7 @@
             a.results.map((ra) => {
                 const rb = b ? b.results.find((r) => r.image_id === ra.image_id) : null;
                 return h('div', { class: 'compare' + (b ? '' : ' single') },
-                    h('div', null, h('img', { src: thumbUrl(ra.image_id), loading: 'lazy' }), h('div', { class: 'hint', style: 'word-break:break-all' }, ra.rel)),
+                    h('div', null, h('img', { src: thumbUrl(ra.image_id), loading: 'lazy', style: 'cursor:zoom-in', title: 'Click to see the image at full size', onclick: () => viewImage(ra.image_id, ra.rel) }), h('div', { class: 'hint', style: 'word-break:break-all' }, ra.rel)),
                     h('div', null, h('p', null, ra.caption), verdictChips(ra)),
                     b ? h('div', null, rb ? [h('p', null, wordDiff(ra.caption, rb.caption)), verdictChips(rb)] : h('span', { class: 'hint' }, 'not in this run')) : null);
             }),
@@ -98,7 +98,7 @@
                 h('button', { class: 'quiet small', onclick: pinPicker }, bench.pins.length ? 'Change the pins' : 'Pin some images')),
             bench.pins.length ? null : h('p', { class: 'hint', style: 'margin-top:8px' }, 'Pin 5 to 10 hard images. Then write a few facts for each once, and every recipe version is scored on them.'),
             bench.pins.map((pin) => h('div', { class: 'pinned' },
-                h('img', { src: thumbUrl(pin.id), loading: 'lazy' }),
+                h('img', { src: thumbUrl(pin.id), loading: 'lazy', style: 'cursor:zoom-in', title: 'Click to see the image at full size', onclick: () => viewImage(pin.id, pin.rel) }),
                 h('div', null,
                     h('div', { class: 'spread' }, h('b', { style: 'font-size:12.5px' }, pin.rel),
                         h('span', null, h('button', { class: 'quiet small', onclick: () => showRequest(pin) }, 'Show request'))),

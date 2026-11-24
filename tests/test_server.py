@@ -39,8 +39,9 @@ async def test_connect_test_stores_what_the_server_supports(api):
 async def test_run_then_review_worst_first(api, dataset):
     status = await run_batch(api)
     assert status["state"] == "done" and status["done"] == 3
-    rows = (await api.get("/api/review")).json()["rows"]
+    rows = (await api.get("/api/review", params={"sort": "score"})).json()["rows"]
     assert [r["rel"] for r in rows][-1] == "plain.png" and rows[0]["score"] >= rows[1]["score"] > 0
+    assert [r["rel"] for r in (await api.get("/api/review")).json()["rows"]] == ["clash.png", "plain.png", "unsure.png"]
     only_tags = (await api.get("/api/review", params={"q": "signal:tags"})).json()["rows"]
     assert [r["rel"] for r in only_tags] == ["clash.png"]
     assert (await api.get("/api/review", params={"q": "signal:bogus"})).status_code == 422
@@ -107,8 +108,17 @@ async def test_regenerate_one_image_with_extra_instructions(api, dataset, mock_u
     (dataset / "flaky.txt").write_text("1girl")
     again = (await api.post(f"/api/review/{failed['id']}/regenerate", json={"extra": "Mention the hat."})).json()
     assert again["status"] == "done" and again["caption"]
-    looks = [r["body"] for r in mock_url[1].state.mock["requests"] if "caption_fields" in str(r["body"].get("response_format"))]
-    assert "Mention the hat." in looks[-1]["messages"][0]["content"]
+    requests = [r["body"] for r in mock_url[1].state.mock["requests"]]
+    look = [b for b in requests if "caption_fields" in str(b.get("response_format"))][-1]
+    compose = [b for b in requests if "Notes:" in str(b["messages"][-1]["content"])][-1]
+    # What you say about one image reaches both steps as a known fact, and is kept with the image.
+    assert "Known facts about this image" in look["messages"][1]["content"][0]["text"]
+    assert "Mention the hat." in look["messages"][1]["content"][0]["text"]
+    assert "Mention the hat." in compose["messages"][0]["content"]
+    assert again["note"] == "Mention the hat."
+    mock_url[1].state.mock["requests"].clear()
+    await run_batch(api, image_ids=[failed["id"]])
+    assert "Mention the hat." in str(mock_url[1].state.mock["requests"][0]["body"])      # used again on a later run
 
 
 async def test_test_bench_scores_facts_and_writes_nothing(api, dataset):
@@ -145,8 +155,11 @@ async def test_prefill_variants_reset_and_sharing(api):
     await api.put("/api/prefills/style", json=style)
     exported = (await api.get("/api/share/export")).json()
     assert "sparkly" in next(p for p in exported["prefills"] if p["id"] == "style")["banned_words"]
+    style["max_words"] = 160
+    await api.put("/api/prefills/style", json=style)
     reset = (await api.post("/api/prefills/style/reset")).json()["prefills"]
     assert "sparkly" not in next(p for p in reset if p["id"] == "style")["banned_words"]
+    assert next(p for p in reset if p["id"] == "style")["max_words"] == 160      # a reset keeps the word range you chose
     imported = (await api.post("/api/share/import", json=exported)).json()["prefills"]
     assert "sparkly" in next(p for p in imported if p["id"] == "style")["banned_words"]
     assert (await api.delete("/api/prefills/style")).status_code == 409
@@ -187,7 +200,7 @@ async def test_lists_sort_by_name_in_natural_order(api, dataset):
     names = [i["rel"] for i in (await api.get("/api/dataset")).json()["images"]]
     assert [n for n in names if n.startswith("ta")] == ["ta (2).png", "ta (10).png", "ta (16).png"]
     await run_batch(api)
-    by_name = [r["rel"] for r in (await api.get("/api/review", params={"sort": "name"})).json()["rows"]]
+    by_name = [r["rel"] for r in (await api.get("/api/review")).json()["rows"]]
     assert by_name == ["clash.png", "plain.png", "ta (2).png", "ta (10).png", "ta (16).png", "unsure.png"]
-    by_score = (await api.get("/api/review")).json()["rows"]
+    by_score = (await api.get("/api/review", params={"sort": "score"})).json()["rows"]
     assert [r["score"] for r in by_score] == sorted((r["score"] for r in by_score), reverse=True)

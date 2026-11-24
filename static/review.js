@@ -4,7 +4,7 @@
     const panel = $('#panel-review');
     let rows = [], totals = { done: 0, reviewed: 0, flagged: 0, failed: 0 };
     let query = '';
-    let sortBy = localStorage.getItem('reviewSort') === 'name' ? 'name' : 'score';
+    let sortBy = localStorage.getItem('reviewSort') === 'score' ? 'score' : 'name';
     let currentId = null, detail = null;
     let chatOpen = false;
 
@@ -223,7 +223,7 @@
         const counter = h('span', { class: 'counter' + (over ? ' over' : ''), title: `Tags plus description, counted with: ${d.tokenizer.source}` },
             `${d.words} words · ${d.tokens} of ${d.token_limit} tokens${d.tokenizer.exact ? '' : ' (approximate)'}${over ? ' · over the limit' : ''}`);
         caption.addEventListener('input', () => { counter.textContent = `${caption.value.trim().split(/\s+/).filter(Boolean).length} words · saves when you click away`; counter.className = 'counter'; });
-        const extra = h('input', { type: 'text', placeholder: 'optional extra instructions for this one image', class: 'grow' });
+        const extra = h('textarea', { rows: 2, class: 'grow', value: d.note || '', placeholder: 'An elf girl sits on a tree stump and plays an ocarina.' });
 
         const fields = (d.field_defs || []).map((def) => {
             const value = (d.fields || {})[def.key] || '';
@@ -258,7 +258,7 @@
                 h('span', { class: 'hint' }, [['J', 'next'], ['K', 'previous'], ['A', 'approve'], ['E', 'edit'], ['C', 'Sweet Talk'], ['N', 'next unreviewed'], ['R', 'regenerate']]
                     .map(([key, label]) => [h('span', { class: 'kbd' }, key), label, '  ']))),
             h('div', { class: 'detail-top' },
-                h('img', { class: 'picture', src: thumbUrl(d.id, 'prepared'), title: 'Shown as the model saw it. Click to enlarge.', onclick: () => overlay(h('div', { class: 'modal' }, h('img', { class: 'zoom', src: thumbUrl(d.id, 'prepared') })), { center: true }) }),
+                h('img', { class: 'picture', src: thumbUrl(d.id, 'prepared'), title: 'Click to see the image at full size', onclick: () => viewImage(d.id, d.rel) }),
                 h('div', null,
                     d.status === 'failed' ? h('div', { class: 'notice error', style: 'margin-bottom:10px' }, 'This image failed: ', d.error) : null,
                     d.reasons.length ? h('ul', { class: 'reasons' }, d.reasons.map((r) => h('li', null, flagChip(r.signal), h('span', null, r.message))))
@@ -273,7 +273,8 @@
                         h('button', { class: 'quiet', onclick: openChat }, candy('Sweet Talk', 'review chat'))),
                     h('label', null, 'Tags', h('span', { class: 'plain' }, d.rel.replace(/\.[^.]+$/, '') + '.txt')),
                     h('textarea', { rows: 3, value: d.tags, onchange: (e) => act(null, () => saveText('tags', e.target.value)) }),
-                    h('div', { class: 'row', style: 'margin-top:10px' }, extra,
+                    h('label', { style: 'margin-top:12px' }, 'What you know about this image', h('span', { class: 'plain' }, 'told to the model as fact, kept with the image and used on every later run')),
+                    h('div', { class: 'row', style: 'align-items:flex-end' }, extra,
                         h('button', {
                             id: 'reviewRegenerate', class: 'quiet', onclick: (e) => act(e.target, async () => {
                                 e.target.textContent = 'Looking again…';
@@ -340,7 +341,7 @@
                             localStorage.setItem('reviewSort', sortBy);
                             act(null, async () => { await loadList(); renderList(); const active = $('.queue-item.active', panel); if (active) active.scrollIntoView({ block: 'nearest' }); });
                         },
-                    }, [['score', 'Most doubtful first'], ['name', 'By file name']].map(([value, label]) => h('option', { value, selected: sortBy === value }, label)))),
+                    }, [['name', 'By file name'], ['score', 'Most doubtful first']].map(([value, label]) => h('option', { value, selected: sortBy === value }, label)))),
                 flagLegend(),
                 h('p', { class: 'hint', id: 'reviewTotals', style: 'margin:8px 0' }),
                 h('div', { class: 'queue', id: 'reviewQueue' })),

@@ -105,7 +105,7 @@
                 }, 'Duplicate'),
                 draft.builtin ? h('button', {
                     class: 'quiet small', onclick: (e) => act(e.target, async () => {
-                        if (!confirm(`Reset ${draft.name} to its default text?`)) return;
+                        if (!confirm(`Reset ${draft.name} to its default text? Your word range and preset are kept; everything else goes back to the default.`)) return;
                         App.prefills = (await api(`/api/prefills/${selected}/reset`, 'POST')).prefills; pick(selected); render();
                     }),
                 }, 'Reset to default') : h('button', {

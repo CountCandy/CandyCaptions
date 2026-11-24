@@ -196,6 +196,11 @@ def test_long_captions_get_room_and_are_never_left_mid_sentence():
     assert clean_caption(cut, cut_off=True) == "Two figures stand in a clearing."
     assert clean_caption(cut) == cut
     assert clean_caption("One sentence only that never ends", cut_off=True) == "One sentence only that never ends"
+    # A model that breaks its last sentence off to stay under the word limit.
+    assert clean_caption("They stand on grass. The setting is outdoors, illuminated by.") == "They stand on grass."
+    assert clean_caption("They stand on grass. The scene is.") == "They stand on grass."
+    assert clean_caption("They stand on grass. A fox sits by.") == "They stand on grass."      # rare false alarm, costs one sentence
+    assert clean_caption("They stand on grass. A fox sits nearby.") == "They stand on grass. A fox sits nearby."
 
 
 def test_old_settings_get_the_stricter_uncertain_word_default():
