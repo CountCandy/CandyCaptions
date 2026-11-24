@@ -251,3 +251,15 @@ async def test_recent_folders_keep_the_last_five(api, tmp_path):
         make_image(folder / "a.png")
         recent = (await api.post("/api/dataset/open", json={"path": str(folder)})).json()["recent"]
     assert len(recent) == 5 and recent[0].endswith("set6")
+
+
+async def test_picture_addresses_differ_between_datasets_and_file_versions(api, dataset, tmp_path):
+    first = (await api.get("/api/dataset")).json()
+    other = tmp_path / "other"
+    other.mkdir()
+    make_image(other / "plain.png", (0, 0, 0))
+    second = (await api.post("/api/dataset/open", json={"path": str(other)})).json()
+    assert first["id"] != second["id"] and first["images"][0]["id"] == second["images"][0]["id"] == 1
+    before = second["images"][0]["v"]
+    make_image(other / "plain.png", (9, 9, 9), size=(640, 640))
+    assert (await api.post("/api/dataset/rescan")).json()["images"][0]["v"] != before

@@ -123,7 +123,19 @@ function formatDuration(seconds) {
     return rem ? `${hours}h ${rem}m` : `${hours}h`;
 }
 
-const thumbUrl = (id, size = 'thumb') => `/api/image/${id}?size=${size}`;
+// A browser reuses a picture it has already loaded for the same address, whatever the server says.
+// Image numbers start again in every dataset, so each address also carries the dataset and the
+// file's version; a different dataset or a replaced file is then a different address.
+const imageVersions = new WeakMap();
+function thumbUrl(id, size = 'thumb') {
+    const dataset = App.dataset || {};
+    let version = '';
+    if (dataset.open) {
+        if (!imageVersions.has(dataset)) imageVersions.set(dataset, new Map(dataset.images.map((image) => [image.id, image.v])));
+        version = `&v=${dataset.id}-${imageVersions.get(dataset).get(id) || ''}`;
+    }
+    return `/api/image/${id}?size=${size}${version}`;
+}
 
 // Word-level diff of two captions, as a fragment with <ins> and <del>.
 function wordDiff(before, after) {

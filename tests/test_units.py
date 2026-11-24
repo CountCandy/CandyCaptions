@@ -226,3 +226,22 @@ def test_saved_recipes_and_word_lists_follow_the_spelling_change():
     save_json("wordlists.json", lists)
     loaded = load_wordlists()
     assert "colors" in loaded["categories"] and "color_aliases" in loaded["tag_map"]
+
+
+def test_saved_builtin_recipes_gain_the_american_rule_and_clean_quality_phrases_once():
+    from candycaption.config import load_json, save_json
+
+    old = json.loads(json.dumps(DEFAULT_PREFILLS))
+    for prefill in old:
+        prefill.pop("wording")
+        prefill["rules"] = [r for r in prefill["rules"] if "American" not in r] + ["My own rule."]
+        prefill["banned_words"] = ["sparkly"]
+        prefill["max_words"] = 160
+    save_json("prefills.json", old)
+    style = load_prefills()[0]
+    assert style["rules"][0] == "Write in American English." and "My own rule." in style["rules"]
+    assert "sparkly" in style["banned_words"] and "no visible defects" in style["banned_words"] and style["max_words"] == 160
+    # Once done it is not done again, so a rule you delete afterwards stays deleted.
+    style["rules"].remove("Write in American English.")
+    save_json("prefills.json", [style])
+    assert "Write in American English." not in load_prefills()[0]["rules"]

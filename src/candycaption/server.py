@@ -326,11 +326,13 @@ def dataset_payload() -> dict[str, Any]:
             summary[check] += 1
         images.append({
             "id": image["id"], "rel": image["rel"], "width": image["width"], "height": image["height"],
+            # Changes whenever the file does; the page puts it in every picture address.
+            "v": f"{int(image['mtime'] or 0)}-{image['size'] or 0}",
             "status": image["status"], "has_caption": proj.has_caption(image), "has_tags": proj.tags_path(image).exists(),
             "health": badges, "pinned": image["id"] in pins, "reviewed": bool(image["reviewed"]),
         })
     return {
-        "open": True, "folder": str(proj.folder), "settings": proj.store.settings(), "images": images,
+        "open": True, "id": proj.id, "folder": str(proj.folder), "settings": proj.store.settings(), "images": images,
         "health_summary": summary, "health_checks": {k: {"name": v[0], "candy": v[1], "why": v[2]} for k, v in HEALTH_CHECKS.items()},
         "tokenizer": tokens.status(settings), "token_limit": settings.get("token_limit", 512),
         "captioned": sum(1 for i in images if i["has_caption"]), "recent": settings.get("recent", []),

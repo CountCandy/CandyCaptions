@@ -110,7 +110,7 @@ DEFAULT_PREFILLS: list[dict[str, Any]] = [
         # The last four keep a "nothing wrong with it" Quality note from turning into a sentence of the caption.
         "banned_words": COMMON_BANNED + ["art style", "in the style of", "anime style", "stylized", "stylised",
                                          "no visible defects", "no watermark", "no visible watermark", "the piece is finished"],
-        "preset": "Balanced", "min_words": 40, "max_words": 70,
+        "preset": "Balanced", "min_words": 40, "max_words": 70, "wording": 2,
     },
     {
         "id": "character", "name": "Character", "builtin": True,
@@ -125,7 +125,7 @@ DEFAULT_PREFILLS: list[dict[str, Any]] = [
         }),
         "toggles": _toggles({"use_trigger"}),
         "banned_words": list(COMMON_BANNED),
-        "preset": "Balanced", "min_words": 40, "max_words": 70,
+        "preset": "Balanced", "min_words": 40, "max_words": 70, "wording": 2,
     },
     {
         "id": "concept", "name": "Concept", "builtin": True,
@@ -138,7 +138,7 @@ DEFAULT_PREFILLS: list[dict[str, Any]] = [
         "fields": _fields({}),
         "toggles": _toggles({"use_trigger"}, {"use_trigger": "Name the concept as {trigger}."}),
         "banned_words": list(COMMON_BANNED),
-        "preset": "Balanced", "min_words": 40, "max_words": 70,
+        "preset": "Balanced", "min_words": 40, "max_words": 70, "wording": 2,
     },
 ]
 
@@ -177,6 +177,19 @@ def load_prefills() -> list[dict[str, Any]]:
     if not saved:
         return copy.deepcopy(DEFAULT_PREFILLS)
     saved = _american(saved)
+    for prefill in saved:
+        default = default_prefill(prefill.get("id", ""))
+        if default is None or prefill.get("wording", 1) >= 2:
+            continue
+        # Built-in recipes saved before these were added: the American English rule, and (Style) the
+        # phrases that keep a clean Quality note out of the caption. Nothing of yours is removed.
+        rule = "Write in American English."
+        if rule not in prefill.get("rules", []):
+            prefill["rules"] = [rule] + list(prefill.get("rules", []))
+        have = {w.lower() for w in prefill.get("banned_words", [])}
+        prefill["banned_words"] = list(prefill.get("banned_words", [])) + [
+            w for w in default["banned_words"] if w.lower() not in have and w.startswith(("no ", "the piece"))]
+        prefill["wording"] = 2
     ids = {p["id"] for p in saved}
     return saved + [copy.deepcopy(p) for p in DEFAULT_PREFILLS if p["id"] not in ids]
 
