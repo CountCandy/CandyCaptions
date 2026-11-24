@@ -189,30 +189,63 @@ async def explain(client: ModelClient, snapshot: dict[str, Any], urls: list[str]
 
 # -- putting it together ---------------------------------------------------
 
-def usable(project: Project) -> list[dict[str, Any]]:
-    return [i for i in project.store.images() if not (i.get("health") or {}).get("unreadable") and (i.get("health") or {}).get("stats")]
+def usable(project: Project, chosen_only: bool = True) -> list[dict[str, Any]]:
+    """Readable, measured images; only the chosen ones when the user picked a subset to check."""
+    images = [i for i in project.store.images() if not (i.get("health") or {}).get("unreadable") and (i.get("health") or {}).get("stats")]
+    chosen = project.store.get_meta("style_selection")
+    if chosen_only and chosen:
+        picked = [i for i in images if i["id"] in set(chosen)]
+        if picked:
+            return picked
+    return images
+
+
+def targets(project: Project) -> list[dict[str, Any]]:
+    """Images the user marked as exactly the style they are aiming for."""
+    wanted = set(project.store.get_meta("style_targets") or [])
+    return [i for i in usable(project, chosen_only=False) if i["id"] in wanted]
+
+
+def note_of(image: dict[str, Any]) -> str | None:
+    return (image.get("style") or {}).get("note") or ((image.get("fields") or {}).get("style") if image.get("fields") else None)
+
+
+def set_choice(project: Project, key: str, ids: list[int] | None) -> None:
+    """Change which images are checked, or which are the targets. Either makes the old results stale."""
+    known = {i["id"] for i in project.store.images()}
+    project.store.set_meta(key, sorted(set(ids or []) & known) or None)
+    project.store.set_meta("style", None)
 
 
 def profile(project: Project) -> dict[str, Any]:
     """Everything the tab shows. The pixel passes are computed fresh; the model's part is read from the store."""
     images = usable(project)
+    everything = usable(project, chosen_only=False)
+    meta = project.store.get_meta("style") or {}
+    aims = targets(project)
+    aim_ids = {i["id"] for i in aims}
     stats = [i["health"]["stats"] for i in images]
     macro = macro_flags(stats)
     pixels = pixel_outliers(stats)
     rows = []
     for image, flags, px in zip(images, macro, pixels):
         style = image.get("style") or {}
+        # A check only counts against the style card it was made with.
+        current = meta.get("at") is not None and style.get("card_at") == meta.get("at")
         rows.append({
-            "id": image["id"], "rel": image["rel"], "macro": flags, "pixels": px,
-            "note": style.get("note") or ((image.get("fields") or {}).get("style") if image.get("fields") else None),
-            "match": style.get("match"), "measured": style.get("measured"), "why": style.get("why"),
+            "id": image["id"], "rel": image["rel"], "macro": flags, "pixels": px, "note": note_of(image),
+            "match": style.get("match") if current else None, "measured": style.get("measured") if current else None,
+            "why": style.get("why") if current else None, "target": image["id"] in aim_ids,
         })
-    meta = project.store.get_meta("style") or {}
     checked = sum(1 for r in rows if r["match"] is not None)
     return {
-        "enough": len(rows) >= MIN_SET, "min_set": MIN_SET, "count": len(rows),
+        "enough": len(rows) >= MIN_SET, "min_set": MIN_SET, "count": len(rows), "total": len(everything),
+        "selection": project.store.get_meta("style_selection") if len(rows) < len(everything) else None,
+        "targets": [{"id": i["id"], "rel": i["rel"]} for i in aims],
+        "can_run": len(rows) >= MIN_SET or (bool(aims) and len(rows) >= 1),
         "card": meta.get("card"), "made": meta, "checked": checked,
-        "macro": sorted((r for r in rows if r["macro"]), key=lambda r: -max(abs(f["z"]) for f in r["macro"])),
+        # Listed by file name, like every other list in the app.
+        "macro": [r for r in rows if r["macro"]],
         "odd": stands_out(rows) if checked or len(rows) >= MIN_SET else [],
         "rows": rows,
     }
@@ -267,7 +300,10 @@ class StyleJob:
         snapshot = build_snapshot(self.project, self.app)
         long_side = int(snapshot["sampling"].get("long_side", 1536))
         images = usable(self.project)
-        need_note = [i for i in images if redo or not ((i.get("style") or {}).get("note") or (i.get("fields") or {}).get("style"))]
+        aims = targets(self.project)
+        # Targets need a note too, even when they are outside the images being checked.
+        noted = {i["id"]: i for i in images + aims}
+        need_note = [i for i in noted.values() if redo or not note_of(i)]
         self.total = len(need_note) + len(images)
         self._tell()
         client = self.client_factory(self.app)
@@ -283,20 +319,24 @@ class StyleJob:
             await self._each(need_note, "Writing a style note for each image", write_note)
 
             images = usable(self.project)
-            notes = [(i.get("style") or {}).get("note") or (i.get("fields") or {}).get("style") for i in images]
-            self.step = "Summing up the set's style"
+            aims = targets(self.project)
+            # With targets, the style is theirs alone. Without, it is what most of the set shares.
+            notes = [note_of(i) for i in (aims or images)]
+            self.step = "Summing up the target style" if aims else "Summing up the set's style"
             self._tell()
             card = await style_card(client, snapshot, [n for n in notes if n])
-            store.set_meta("style", {"card": card, "at": time.time(), "model": snapshot["model"],
-                                     "verifier_model": snapshot["verifier_model"], "count": len(images)})
+            made = {"card": card, "at": time.time(), "model": snapshot["model"], "verifier_model": snapshot["verifier_model"],
+                    "count": len(images), "targets": len(aims)}
+            store.set_meta("style", made)
 
             async def check(image: dict[str, Any]) -> None:
                 match, measured = await style_match(client, snapshot, await asyncio.to_thread(url, image), card)
-                style = {**(store.image(image["id"]).get("style") or {}), "match": round(match, 4), "measured": measured}
+                style = {**(store.image(image["id"]).get("style") or {}), "match": round(match, 4), "measured": measured,
+                         "card_at": made["at"]}
                 style.pop("why", None)      # an explanation written against an older card no longer applies
                 store.update_image(image["id"], style=style)
 
-            await self._each(images, "Checking each image against the set's style", check)
+            await self._each(images, "Checking each image against the target style" if aims else "Checking each image against the set's style", check)
             odd = len(stands_out(profile(self.project)["rows"]))
             self.state = "done"
             self.message = (f"Batch tasted: {odd} piece{'s' if odd != 1 else ''} taste{'s' if odd == 1 else ''} different."
@@ -313,11 +353,15 @@ class StyleJob:
 async def explain_image(project: Project, app_settings: dict[str, Any], image: dict[str, Any], client: ModelClient) -> str:
     """Show the image next to three typical ones and ask how it differs. Four images in one request."""
     snapshot = build_snapshot(project, app_settings)
-    rows = [r for r in profile(project)["rows"] if r["id"] != image["id"]]
-    rows.sort(key=lambda r: (-(r["match"] if r["match"] is not None else 0.5), r["pixels"]["z"]))
-    typical = [project.store.image(r["id"]) for r in rows[:3]]
-    if len(typical) < 3:
-        raise ModelServerError("reply", "There are too few other images to compare with.")
+    aims = [i for i in targets(project) if i["id"] != image["id"]]
+    if aims:
+        typical = aims[:3]
+    else:
+        rows = [r for r in profile(project)["rows"] if r["id"] != image["id"]]
+        rows.sort(key=lambda r: (-(r["match"] if r["match"] is not None else 0.5), r["pixels"]["z"]))
+        typical = [project.store.image(r["id"]) for r in rows[:3]]
+    if not typical:
+        raise ModelServerError("reply", "There are no other images to compare with.")
     # Smaller copies: four images share one request, and this is about overall look, not small detail.
     urls = [await asyncio.to_thread(prepare_data_url, project.path(i), 896, snapshot.get("background", "#ffffff"))
             for i in [image] + typical]

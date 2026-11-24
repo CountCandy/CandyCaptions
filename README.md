@@ -246,6 +246,10 @@ for your eye, not a verdict. A set needs at least 8 images.
 - **Odd One Out** uses the model: a short style note per image, one style summed up for the set, then one
   yes or no question per image, "is this made in that style?". Palette, light and texture measured from the
   pixels give a second opinion. **How does it differ?** shows a flagged image next to three typical ones.
+- **Images to check** limits everything on the tab to the images you choose.
+- **Gold Standard** lets you mark a few images as exactly the style you are aiming for. The style is then
+  written from those alone and every image is checked against it, instead of against what most of the set
+  shares. Use it when a set mixes two styles or when most of the set is not what you want.
 - **Plant a Ringer** ranks an image you know does not belong, without adding it to the dataset. If your
   ringer does not come out near the top, do not trust the ranking for that kind of difference.
 

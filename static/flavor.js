@@ -17,12 +17,42 @@
         });
     }
 
+    // Pick images from the dataset. `chosen` is a Set of ids; `done` gets the final list.
+    function pickImages(title, plain, hint, chosen, done) {
+        const picked = new Set(chosen);
+        const count = h('b');
+        const cards = new Map();
+        const refresh = () => {
+            count.textContent = `${picked.size} chosen`;
+            cards.forEach((card, id) => card.classList.toggle('picked', picked.has(id)));
+        };
+        const images = App.dataset.images.filter((i) => !i.health.some((b) => b.check === 'unreadable')).sort((a, b) => byName(a.rel, b.rel));
+        const grid = h('div', { class: 'thumbs' }, images.map((image) => {
+            const card = h('div', { class: 'thumb', title: image.rel, onclick: () => { if (picked.has(image.id)) picked.delete(image.id); else picked.add(image.id); refresh(); } },
+                h('img', { src: thumbUrl(image.id), loading: 'lazy' }), h('span', { class: 'state chip good tick' }, '✓'), h('div', { class: 'name' }, image.rel));
+            cards.set(image.id, card);
+            return card;
+        }));
+        let close = () => {};
+        close = overlay(h('div', { class: 'modal', style: 'width:min(1200px,100%)' },
+            h('div', { class: 'spread', style: 'margin-bottom:6px' }, h('h2', null, candy(title, plain)),
+                h('span', { class: 'row' }, count,
+                    h('button', { class: 'quiet small', onclick: () => { images.forEach((i) => picked.add(i.id)); refresh(); } }, 'All'),
+                    h('button', { class: 'quiet small', onclick: () => { picked.clear(); refresh(); } }, 'None'),
+                    h('button', { class: 'small', onclick: () => { close(); done([...picked]); } }, 'Use these'))),
+            h('p', { class: 'hint', style: 'margin-bottom:12px' }, hint), grid), { center: true });
+        refresh();
+    }
+
+    const choose = (which, ids) => act(null, async () => { data = await api(`/api/style/${which}`, 'PUT', { ids }); ringerResult = null; render(); });
+
     function macroCard() {
         return h('div', { class: 'card' },
             h('h2', null, candy('Source quality', 'macro pass: measured from the pixels, no model needed')),
             h('p', { class: 'hint', style: 'margin:4px 0 10px' },
                 'Each image is compared with the rest of this folder, not with a fixed limit. Compression or softness that the whole set shares is not flagged, because then it is not the odd one out.'),
-            data.macro.length
+            !data.enough ? h('p', { class: 'hint' }, `This needs at least ${data.min_set} images to compare; ${data.count} ${data.count === 1 ? 'is' : 'are'} being checked.`)
+            : data.macro.length
                 ? data.macro.map((row) => h('div', { class: 'row', style: 'padding:8px 0; border-bottom:1px solid var(--input-border)' },
                     thumb(row), h('div', { class: 'grow', style: 'min-width:0' }, h('b', { style: 'font-size:13px' }, row.rel),
                         h('div', { class: 'chips', style: 'margin-top:4px' }, row.macro.map((flag) => h('span', { class: 'chip health', title: flag.detail }, flag.name))),
@@ -38,6 +68,7 @@
             h('div', { class: 'grow', style: 'min-width:0' },
                 h('b', { style: 'font-size:13px' }, row.rel),
                 h('div', { class: 'chips', style: 'margin-top:4px' },
+                    row.target ? h('span', { class: 'chip good', title: 'One of your target images' }, '★ target') : null,
                     row.match != null ? h('span', { class: 'chip ' + (byModel ? 'bad' : 'neutral'), title: row.measured ? 'Probability the model says this image is in the set\'s style' : 'A plain yes or no; this server gives no probabilities' },
                         `Model: ${percent(row.match)} that it fits`) : null,
                     row.pixels.reasons.length ? h('span', { class: 'chip health', title: 'Palette, light and texture against its nearest neighbors in the set' }, `Pixels: ${row.pixels.reasons.join(', ')}`) : null),
@@ -62,11 +93,30 @@
             h('h2', null, candy('Odd One Out', 'style lens: each image checked against the set\'s own style')),
             h('p', { class: 'hint', style: 'margin:4px 0 12px' },
                 'The model writes a short style note for each image, sums the notes up into one style for the set, then looks at each image again and answers one question: is this made in that style? One image per request. The result is a ranking for your eye, not a verdict.'),
-            data.card ? h('div', { class: 'notice', style: 'margin-bottom:12px' }, h('b', null, 'This set\'s style: '), data.card,
+            h('div', { class: 'grid2', style: 'margin-bottom:12px' },
+                h('div', { class: 'notice' },
+                    h('b', null, 'Images to check: '), data.selection ? `${data.count} of ${data.total} chosen` : `all ${data.total}`,
+                    h('div', { class: 'row', style: 'margin-top:8px' },
+                        h('button', { class: 'quiet small', disabled: busy(), onclick: () => pickImages('Images to check', 'only these are compared and ranked',
+                            'Pick the images to look for an odd one out among. Everything on this tab then applies to these only.',
+                            data.rows.map((r) => r.id), (ids) => choose('selection', ids.length === data.total ? null : ids)) }, 'Choose images'),
+                        data.selection ? h('button', { class: 'quiet small', disabled: busy(), onclick: () => choose('selection', null) }, 'Check all again') : null)),
+                h('div', { class: 'notice' },
+                    h('b', null, candy('Gold Standard', 'images that are exactly the style you are aiming for')),
+                    h('div', { style: 'margin-top:4px' }, data.targets.length
+                        ? h('span', { class: 'row' }, data.targets.slice(0, 8).map((t) => thumb(t, 40)), data.targets.length > 8 ? `and ${data.targets.length - 8} more` : null)
+                        : h('span', { class: 'hint' }, 'None set. The style is then whatever most of the images share. Mark a few and every image is measured against those instead.')),
+                    h('div', { class: 'row', style: 'margin-top:8px' },
+                        h('button', { class: 'quiet small', disabled: busy(), onclick: () => pickImages('Gold Standard', 'the style you are aiming for',
+                            'Pick one to five images that are exactly the style you want. The set\'s style is then written from these alone, and every image is checked against it.',
+                            data.targets.map((t) => t.id), (ids) => choose('targets', ids)) }, data.targets.length ? 'Change' : 'Mark target images'),
+                        data.targets.length ? h('button', { class: 'quiet small', disabled: busy(), onclick: () => choose('targets', []) }, 'Clear') : null))),
+            data.card ? h('div', { class: 'notice', style: 'margin-bottom:12px' }, h('b', null, data.made.targets ? 'The target style: ' : 'This set\'s style: '), data.card,
                 h('div', { class: 'hint', style: 'margin-top:4px' }, `From ${data.made.count} images on ${new Date(data.made.at * 1000).toLocaleString()}. Captioner: ${data.made.model}${taster}`)) : null,
             h('div', { class: 'row' },
                 h('button', {
-                    disabled: busy(), onclick: (e) => act(e.target, async () => {
+                    disabled: busy() || !data.can_run, title: data.can_run ? '' : `Needs at least ${data.min_set} images, or some target images`,
+                    onclick: (e) => act(e.target, async () => {
                         await flushDatasetSettings();
                         data.job = await api('/api/style/run', 'POST', { redo: redo.checked });
                         render();
@@ -121,7 +171,7 @@
         const width = Math.max(1, Math.round(track.clientWidth));
         if (reveal.dataset.width !== String(width)) { reveal.innerHTML = buildCrustSVG(width, 42); reveal.dataset.width = String(width); }
         const job = data.job;
-        const idle = data.checked ? `${data.checked} of ${data.count} images checked against the set's style.` : `${data.count} images, not tasted yet.`;
+        const idle = data.checked ? `${data.checked} of ${data.count} images checked against the ${data.made.targets ? 'target' : "set's"} style.` : `${data.count} images, not tasted yet.`;
         reveal.style.width = job.state === 'running' ? `${job.total ? Math.min(100, (job.done / job.total) * 100) : 0}%` : (job.state === 'done' ? '100%' : '0%');
         $('#stylePercent').textContent = job.state === 'running' && job.total ? `${job.done} of ${job.total}` : '';
         $('#styleFlavor').textContent = job.state === 'running' ? `${job.step || 'Warming up'}…` : (job.message || idle);
@@ -130,11 +180,6 @@
     function render() {
         if (needsDataset(panel)) return;
         if (!data) { panel.replaceChildren(h('div', { class: 'empty' }, 'Measuring the batch…')); return; }
-        if (!data.enough) {
-            panel.replaceChildren(h('div', { class: 'card empty' },
-                `This folder has ${data.count} readable image${data.count === 1 ? '' : 's'}. A set needs at least ${data.min_set} before anything can be called the odd one out.`));
-            return;
-        }
         panel.replaceChildren(macroCard(), lensCard(), ringerCard());
         showProgress();
     }

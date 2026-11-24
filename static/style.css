@@ -155,7 +155,7 @@ h1 { font-size: 30px; text-shadow: 0 2px 4px var(--shadow-color); }
 .pill {
     display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px;
     background: var(--input-bg); border: 1px solid var(--input-border); color: var(--text-secondary);
-    font-size: 12.5px; max-width: 560px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-size: 12.5px; max-width: min(900px, 62vw); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pill.clickable { cursor: pointer; }
 .pill.clickable:hover { border-color: var(--focus-color); color: var(--text-primary); }
@@ -409,3 +409,8 @@ pre.payload { max-height: 60vh; overflow: auto; padding: 12px; border-radius: 8p
 .pantry-row b { font-size: 12.5px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 900px) { .pantry-row { grid-template-columns: 76px 1fr; } .pantry-row input { grid-column: 1 / -1; } }
 .sound-toggle { background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; padding: 6px 10px; font-size: 14px; line-height: 1; box-shadow: none; }
+
+/* Image pickers: the tick shows only on chosen cards */
+.thumb .tick { display: none; }
+.thumb.picked { border-color: var(--ok); box-shadow: 0 0 0 2px var(--ok); }
+.thumb.picked .tick { display: inline-flex; background: rgba(0, 0, 0, 0.65); }

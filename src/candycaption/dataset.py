@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import time
+from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -106,6 +108,8 @@ class Project:
         walker = self.folder.rglob("*") if settings.get("recursive") else self.folder.iterdir()
         files = sorted(p for p in walker if p.is_file() and p.suffix.lower() in IMAGE_SUFFIXES)
         present = set()
+        background = settings.get("background", "#ffffff")
+        todo = []
         for path in files:
             rel = path.relative_to(self.folder).as_posix()
             present.add(rel)
@@ -114,13 +118,23 @@ class Project:
             if (existing and existing["size"] == stat.st_size and existing["mtime"] == stat.st_mtime and existing["health"]
                     and (existing["health"].get("unreadable") or (existing["health"].get("stats") or {}).get("v") == STATS_VERSION)):
                 continue
-            image_id = existing["id"] if existing else self.store.add_image(rel)
+            todo.append((path, rel, existing, stat))
+
+        def look(job):
+            path = job[0]
             info = self._inspect(path)
             if not info["health"]["unreadable"]:
                 try:
-                    info["health"]["stats"] = measure(path, settings.get("background", "#ffffff"))
+                    info["health"]["stats"] = measure(path, background)
                 except Exception:  # noqa: BLE001  measurements are a bonus; a scan never fails over them
                     pass
+            return info
+
+        # Decoding and measuring is the slow part, and it runs well side by side.
+        with ThreadPoolExecutor(max_workers=min(8, (os.cpu_count() or 4))) as pool:
+            infos = list(pool.map(look, todo))
+        for (path, rel, existing, stat), info in zip(todo, infos):
+            image_id = existing["id"] if existing else self.store.add_image(rel)
             if existing and existing["sha"] == info["sha"] and (existing["health"] or {}).get("replaced_at"):
                 info["health"]["replaced_at"] = existing["health"]["replaced_at"]
             if existing and existing["sha"] and info["sha"] and existing["sha"] != info["sha"]:

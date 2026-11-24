@@ -316,3 +316,26 @@ async def test_versions_tried_are_capped_at_eight_name_their_model_and_can_be_cl
 
     status = await run_batch(api)
     assert status["model"] == "mock-captioner" and status["verifier_model"] == "mock-captioner"
+
+
+async def test_review_can_filter_by_health_badge(api, dataset):
+    from PIL import Image
+
+    Image.new("RGBA", (900, 900), (0, 0, 0, 0)).save(dataset / "see_through.png")
+    (dataset / "see_through.txt").write_text("1girl")
+    await api.post("/api/dataset/rescan")
+    await run_batch(api)
+    rows = (await api.get("/api/review", params={"q": "health:transparency"})).json()["rows"]
+    assert [r["rel"] for r in rows] == ["see_through.png"]
+    assert len((await api.get("/api/review", params={"q": "NOT health:transparency"})).json()["rows"]) == 3
+
+
+async def test_hint_with_braces_and_quotes_is_sent_as_written(api, dataset, mock_url):
+    images = (await api.get("/api/dataset")).json()["images"]
+    hint = 'The sign reads "{OPEN}" and 100% of it is {visible}.'
+    await api.put(f"/api/image/{images[0]['id']}/note", json={"text": hint})
+    requests = mock_url[1].state.mock["requests"]
+    requests.clear()
+    status = await run_batch(api, image_ids=[images[0]["id"]])
+    assert status["done"] == 1 and status["failed"] == 0
+    assert hint in requests[0]["body"]["messages"][1]["content"][0]["text"]

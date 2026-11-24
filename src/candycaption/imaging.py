@@ -114,7 +114,7 @@ def tiny_test_image() -> str:
     return data_url(buffer.getvalue())
 
 
-STATS_VERSION = 1
+STATS_VERSION = 2
 
 
 def _grid_ratio(gray: np.ndarray, axis: int) -> float:
@@ -137,15 +137,15 @@ def measure(path: Path, background: str = "#ffffff") -> dict[str, float]:
 
     # Sharpness and grain are compared at one common size, so a 4K image and a 1080p one are judged alike.
     mid = img.copy()
-    mid.thumbnail((1536, 1536), Image.LANCZOS)
+    mid.thumbnail((1536, 1536), Image.BILINEAR, reducing_gap=2.0)
     luma = np.asarray(mid.convert("L"), dtype=np.float32)
     laplace = 4 * luma[1:-1, 1:-1] - luma[:-2, 1:-1] - luma[2:, 1:-1] - luma[1:-1, :-2] - luma[1:-1, 2:]
     blurred = (luma[:-2, :-2] + luma[:-2, 1:-1] + luma[:-2, 2:] + luma[1:-1, :-2] + luma[1:-1, 1:-1] + luma[1:-1, 2:]
                + luma[2:, :-2] + luma[2:, 1:-1] + luma[2:, 2:]) / 9
     grain = float(np.median(np.abs(luma[1:-1, 1:-1] - blurred)))
 
-    small = img.copy()
-    small.thumbnail((512, 512), Image.LANCZOS)
+    small = mid.copy()
+    small.thumbnail((512, 512), Image.BILINEAR, reducing_gap=2.0)
     rgb = np.asarray(small, dtype=np.float32)
     r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
     rg, yb = r - g, 0.5 * (r + g) - b

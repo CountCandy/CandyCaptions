@@ -95,6 +95,17 @@ async def caption_error(_: Request, exc: CaptionError):
     return JSONResponse({"detail": str(exc)}, status_code=422)
 
 
+def something_running() -> str | None:
+    """Plain words for whatever long job is under way, or None. Only one runs at a time."""
+    if state.runner and state.runner.busy:
+        return "A batch is running in the Candy Factory."
+    if state.bench_busy:
+        return "A taste test is running."
+    if state.style_job and state.style_job.busy:
+        return "The style check is running in the Flavor Profile tab."
+    return None
+
+
 def project() -> Project:
     if state.project is None:
         raise fail(409, "No dataset is open. Point me at a folder of images in the Pantry tab.")
@@ -365,8 +376,8 @@ async def get_dataset():
 
 @app.post("/api/dataset/open")
 async def open_dataset(body: dict = Body(...)):
-    if state.runner and state.runner.busy:
-        raise fail(409, "A run is going. Stop it before opening another dataset.")
+    if (running := something_running()):
+        raise fail(409, f"{running} Wait for it to finish before opening another dataset.")
     folder = (body.get("path") or "").strip().strip('"')
     if not folder:
         raise fail(422, "Type or paste the path of a folder of images.")
@@ -525,8 +536,8 @@ async def run_start(body: dict = Body(default={})):
     settings = load_settings()
     if not settings.get("model"):
         raise fail(409, "No model is chosen. Pick one in the Candy Shop tab first.")
-    if run.busy or state.bench_busy:
-        raise fail(409, "A run is already going.")
+    if (running := something_running()):
+        raise fail(409, f"{running} Wait for it to finish first.")
     run.app = settings
     ids = body.get("image_ids")
     run.start(mode=body.get("mode", "caption"), image_ids=set(ids) if ids else None,
@@ -591,6 +602,7 @@ async def review_list(q: str = "", sort: str = "name"):
         rows, totals = [], {"done": 0, "reviewed": 0, "flagged": 0, "failed": 0}
         show_reviewed = "reviewed:" in q.lower()
         show_all = "status:" in q.lower()
+        want_health = "health:" in q.lower()
         for image in proj.store.images():
             has_caption = proj.has_caption(image)
             if image["status"] == "failed" and has_caption:
@@ -602,6 +614,8 @@ async def review_list(q: str = "", sort: str = "name"):
             if not has_caption and not (show_all or image["status"] == "failed"):
                 continue
             row = review_row(proj, image, settings, names)
+            if want_health:
+                row["health"] = proj.health(image, settings)      # only worked out when a filter asks for it
             if has_caption:
                 totals["done"] += 1
                 totals["reviewed"] += row["reviewed"]
@@ -615,6 +629,7 @@ async def review_list(q: str = "", sort: str = "name"):
                 continue
             row.pop("fields")
             row.pop("tags")
+            row.pop("health", None)
             rows.append(row)
         if sort == "name":
             rows.sort(key=lambda r: natural_key(r["rel"]))
@@ -704,8 +719,8 @@ async def set_note(image_id: int, body: dict = Body(...)):
 async def regenerate(image_id: int, body: dict = Body(default={})):
     run = runner()
     image_or_404(image_id)
-    if run.busy or state.bench_busy:
-        raise fail(409, "A run is going. Regenerate once it has finished or paused.")
+    if (running := something_running()):
+        raise fail(409, f"{running} Regenerate once it has finished.")
     run.app = load_settings()
     # The note is kept with the image; sending an empty one clears it.
     note = " ".join((body.get("extra") or "").split())
@@ -809,14 +824,26 @@ async def style_run(body: dict = Body(default={})):
     proj, settings = project(), load_settings()
     if not settings.get("model"):
         raise fail(409, "No model is chosen. Pick one in the Candy Shop tab first.")
-    if (state.runner and state.runner.busy) or state.bench_busy or (state.style_job and state.style_job.busy):
-        raise fail(409, "Something is already running.")
-    if len(flavor.usable(proj)) < flavor.MIN_SET:
-        raise fail(409, f"A set needs at least {flavor.MIN_SET} images before anything can be called the odd one out.")
+    if (running := something_running()):
+        raise fail(409, f"{running} Wait for it to finish first.")
+    if not flavor.profile(proj)["can_run"]:
+        raise fail(409, f"A set needs at least {flavor.MIN_SET} images before anything can be called the odd one out, "
+                        "unless you mark target images to compare with.")
     state.style_job = flavor.StyleJob(proj, settings, state.broadcaster.publish)
     state.style_job.start(redo=bool(body.get("redo")))
     await asyncio.sleep(0)
     return state.style_job.status()
+
+
+@app.put("/api/style/{which}")
+async def style_choice(which: str, body: dict = Body(...)):
+    """Choose which images are checked ("selection") or which show the style you are aiming for ("targets")."""
+    if which not in ("selection", "targets"):
+        raise fail(404, "Unknown choice.")
+    if state.style_job and state.style_job.busy:
+        raise fail(409, "The style check is running. Change this once it has finished.")
+    flavor.set_choice(project(), f"style_{which}", body.get("ids"))
+    return await asyncio.to_thread(_style_payload)
 
 
 @app.post("/api/style/explain")
@@ -910,12 +937,12 @@ async def bench_facts(body: dict = Body(...)):
 @app.post("/api/test/run")
 async def bench_run(body: dict = Body(default={})):
     proj, settings = project(), load_settings()
+    if (running := something_running()):
+        raise fail(409, f"{running} Wait for it to finish first.")
     if not settings.get("model"):
         raise fail(409, "No model is chosen. Pick one in the Candy Shop tab first.")
     if not proj.store.testset():
         raise fail(409, "The Sampler Box is empty. Pin a few images first.")
-    if state.bench_busy or (state.runner and state.runner.busy):
-        raise fail(409, "Something is already running.")
     label = (body.get("label") or "").strip() or time.strftime("Version %H:%M:%S")
     state.bench_busy = True
     client = ModelClient(settings)

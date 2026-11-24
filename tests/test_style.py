@@ -162,3 +162,75 @@ async def test_style_check_needs_enough_images(api, tmp_path):
     refused = await api.post("/api/style/run", json={})
     assert refused.status_code == 409 and "at least 8" in refused.json()["detail"]
     assert (await api.get("/api/style")).json()["enough"] is False
+
+
+async def test_checking_only_some_images_and_against_target_images(api, styled, mock_url):
+    for n in range(20, 26):
+        art(styled / f"sketch ({n}).png", n, gray=True)                 # six sketches among twelve color pieces
+    await api.post("/api/dataset/open", json={"path": str(styled)})
+    images = {i["rel"]: i["id"] for i in (await api.get("/api/dataset")).json()["images"]}
+    color = [images[f"ta ({n}).png"] for n in range(1, 13)]
+    sketches = [images[f"sketch ({n}).png"] for n in range(20, 26)]
+
+    # Only the chosen images are checked and ranked.
+    chosen = color[:9] + sketches[:1]
+    data = (await api.put("/api/style/selection", json={"ids": chosen})).json()
+    assert data["count"] == 10 and data["total"] == 18 and sorted(data["selection"]) == sorted(chosen)
+    requests = mock_url[1].state.mock["requests"]
+    requests.clear()
+    data = await run_style(api)
+    assert len(requests) == 21 and data["checked"] == 10                 # 10 notes, 1 card, 10 checks
+    assert [r["rel"] for r in data["odd"]] == ["sketch (20).png"]
+    assert [r["rel"] for r in data["macro"]] == ["sketch (20).png"]      # the pixel pass follows the choice too
+
+    # Changing what is checked makes the old results stale instead of mixing them in.
+    data = (await api.put("/api/style/selection", json={"ids": None})).json()
+    assert data["selection"] is None and data["count"] == 18 and data["checked"] == 0 and data["card"] is None
+
+    # Target images: the style is written from them alone, and "How does it differ?" compares with them.
+    data = (await api.put("/api/style/targets", json={"ids": sketches[:2]})).json()
+    assert [t["rel"] for t in data["targets"]] == ["sketch (20).png", "sketch (21).png"]
+    requests.clear()
+    data = await run_style(api)
+    card_request = next(r["body"] for r in requests if "You are given style notes" in str(r["body"]))
+    assert str(card_request).count("pencil sketch") == 2 and "digital illustration" not in str(card_request["messages"][1])
+    assert data["made"]["targets"] == 2 and sum(1 for r in data["rows"] if r["target"]) == 2
+    await api.post("/api/style/explain", json={"id": color[0]})
+    assert str(requests[-1]["body"]).count("'image_url': {") == 3        # the image and the two targets
+
+    # A small set can be checked once it has targets, though the pixel passes still need eight images.
+    data = (await api.put("/api/style/selection", json={"ids": color[:3]})).json()
+    assert data["count"] == 3 and data["can_run"] and not data["enough"]
+    assert (await api.put("/api/style/targets", json={"ids": []})).json()["can_run"] is False
+
+
+async def test_macro_list_is_in_file_name_order(api, styled):
+    art(styled / "ta (20).png", 60, blur=6)
+    art(styled / "ta (3).png", 61, gray=True)
+    art(styled / "ta (100).png", 62, blur=6)
+    await api.post("/api/dataset/open", json={"path": str(styled)})
+    assert [r["rel"] for r in (await api.get("/api/style")).json()["macro"]] == ["ta (3).png", "ta (20).png", "ta (100).png"]
+
+
+async def test_only_one_long_job_runs_at_a_time(api, styled, tmp_path):
+    from candycaption.mock_server import create_app
+    from conftest import _serve
+    from candycaption.config import load_settings
+
+    slow, url = _serve(create_app(delay=0.3))
+    try:
+        save_settings(dict(load_settings(), base_url=url))
+        await api.post("/api/dataset/open", json={"path": str(styled)})
+        assert (await api.post("/api/style/run", json={})).status_code == 200
+        for path, body in (("/api/run/start", {}), ("/api/test/run", {}), ("/api/style/run", {}), ("/api/review/1/regenerate", {})):
+            refused = await api.post(path, json=body)
+            assert refused.status_code == 409 and "style check is running" in refused.json()["detail"], path
+        other = tmp_path / "other"
+        other.mkdir()
+        assert (await api.post("/api/dataset/open", json={"path": str(other)})).status_code == 409
+        assert (await api.put("/api/style/targets", json={"ids": [1]})).status_code == 409
+        await server.state.style_job.wait()
+        assert (await api.post("/api/run/start", json={})).status_code == 200      # free again once it finishes
+        await server.state.runner.wait()
+    finally:
+        slow.should_exit = True

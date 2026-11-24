@@ -275,7 +275,8 @@ def placeholder_values(snapshot: dict[str, Any], tags: str = "", filename: str =
 KNOWN_FACTS = (
     "Known facts about this image, from the person who made the dataset: {note}\n"
     "Treat these as true even where the image is hard to read, and use their words for what things and "
-    "characters are called. A name given here is not a guess."
+    "characters are called. A name given here is not a guess: use it directly, as in \"Link stands\", "
+    "not \"a figure known as Link\"."
 )
 
 
