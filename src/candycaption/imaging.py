@@ -9,8 +9,10 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
+import math
 from pathlib import Path
 
+import numpy as np
 from PIL import Image, ImageOps
 
 Image.MAX_IMAGE_PIXELS = None
@@ -110,3 +112,60 @@ def tiny_test_image() -> str:
     buffer = io.BytesIO()
     img.save(buffer, "JPEG", quality=90)
     return data_url(buffer.getvalue())
+
+
+STATS_VERSION = 1
+
+
+def _grid_ratio(gray: np.ndarray, axis: int) -> float:
+    """Edge strength on JPEG's 8-pixel grid against edge strength elsewhere. 1.0 means no grid."""
+    edges = np.abs(np.diff(gray, axis=axis)).mean(axis=1 - axis)
+    on = edges[7::8]
+    if len(on) < 8:
+        return 1.0
+    off = np.delete(edges, np.s_[7::8])
+    return float(on.mean() / max(float(off.mean()), 1e-6))
+
+
+def measure(path: Path, background: str = "#ffffff") -> dict[str, float]:
+    """Pixel measurements of one image. Cheap enough to run on every scan."""
+    with Image.open(path) as opened:
+        img = upright_filled(opened, background)
+    width, height = img.size
+    full = np.asarray(img.convert("L"), dtype=np.float32)
+    blocking = max(_grid_ratio(full, 0), _grid_ratio(full, 1))
+
+    # Sharpness and grain are compared at one common size, so a 4K image and a 1080p one are judged alike.
+    mid = img.copy()
+    mid.thumbnail((1536, 1536), Image.LANCZOS)
+    luma = np.asarray(mid.convert("L"), dtype=np.float32)
+    laplace = 4 * luma[1:-1, 1:-1] - luma[:-2, 1:-1] - luma[2:, 1:-1] - luma[1:-1, :-2] - luma[1:-1, 2:]
+    blurred = (luma[:-2, :-2] + luma[:-2, 1:-1] + luma[:-2, 2:] + luma[1:-1, :-2] + luma[1:-1, 1:-1] + luma[1:-1, 2:]
+               + luma[2:, :-2] + luma[2:, 1:-1] + luma[2:, 2:]) / 9
+    grain = float(np.median(np.abs(luma[1:-1, 1:-1] - blurred)))
+
+    small = img.copy()
+    small.thumbnail((512, 512), Image.LANCZOS)
+    rgb = np.asarray(small, dtype=np.float32)
+    r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
+    rg, yb = r - g, 0.5 * (r + g) - b
+    colorfulness = math.sqrt(float(rg.std()) ** 2 + float(yb.std()) ** 2) + 0.3 * math.sqrt(float(rg.mean()) ** 2 + float(yb.mean()) ** 2)
+    hsv = np.asarray(small.convert("HSV"), dtype=np.float32)
+    weight = hsv[..., 1] * hsv[..., 2]
+    hues, _ = np.histogram(hsv[..., 0], bins=12, range=(0, 256), weights=weight)
+    hues = hues / max(float(hues.sum()), 1e-6)
+    light = 0.299 * r + 0.587 * g + 0.114 * b
+    detail = float(np.abs(np.diff(light, axis=0)).mean() + np.abs(np.diff(light, axis=1)).mean())
+    return {
+        "v": STATS_VERSION,
+        "megapixels": round(width * height / 1e6, 3),
+        "sharpness": round(math.log10(float(laplace.var()) + 1e-3), 4),
+        "blocking": round(blocking, 4),
+        "grain": round(math.log10(grain + 0.05), 4),
+        "colorfulness": round(colorfulness, 3),
+        "saturation": round(float(hsv[..., 1].mean()), 3),
+        "brightness": round(float(light.mean()), 3),
+        "contrast": round(float(light.std()), 3),
+        "detail": round(detail, 3),
+        "hues": [round(float(h), 4) for h in hues],
+    }

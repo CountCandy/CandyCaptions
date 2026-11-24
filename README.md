@@ -87,6 +87,7 @@ first run: it sends one tiny image and records what your server supports.
 | Taste Test | Test bench | Pin 5 to 10 hard images, give an image a Hint if the model needs help, write a few answer-key facts, and compare recipe versions on them before a full run. |
 | Candy Factory | Run | Start, pause, resume and stop the batch, and watch it live. |
 | Sorting Table | Review | The doubtful captions, worst first, with the field in doubt named. Fix them by hand or by talking to the model. All caption editing is here, including find and replace. |
+| Flavor Profile | Style | Find the images that do not fit the rest of the set: source quality from the pixels, and a style check of each image against the set's own style. |
 
 ## Update
 
@@ -222,6 +223,7 @@ src/candycaption/
 ├── backends.py     what each backend honors
 ├── connect.py      Test connection
 ├── dataset.py      scanning, caption files, health checks, find and replace
+├── style.py        Flavor Profile: source-quality pass, style lens, ringer test
 ├── store.py        the per-dataset SQLite store
 ├── testbench.py    test bench runs, fact scoring, promote
 ├── filters.py      review filters with AND, OR, NOT
@@ -234,10 +236,23 @@ static/             the page: plain HTML, CSS and JS, no build step
 The look comes from [Candy Echo](https://github.com/CountCandy/candyecho): its three themes, frosted
 panels and rock-candy progress bar.
 
-## Not in v1
+## Flavor Profile: the odd one out
 
-The Style tab (style card, CSD fit check), the tag editor and auto-tagger, the watched folder and the
-BluFlow export are planned for v2.
+For style datasets. Everything is relative to the folder you opened, and the result is a ranked shortlist
+for your eye, not a verdict. A set needs at least 8 images.
+
+- **Source quality** needs no model. It measures sharpness, resolution, JPEG block pattern and grain, and
+  flags an image only when it stands apart from the rest. Compression the whole set shares is not flagged.
+- **Odd One Out** uses the model: a short style note per image, one style summed up for the set, then one
+  yes or no question per image, "is this made in that style?". Palette, light and texture measured from the
+  pixels give a second opinion. **How does it differ?** shows a flagged image next to three typical ones.
+- **Plant a Ringer** ranks an image you know does not belong, without adding it to the dataset. If your
+  ringer does not come out near the top, do not trust the ranking for that kind of difference.
+
+## Not built yet
+
+A style-embedding model (CSD) as a third opinion for subtle differences, dataset-specific banned words
+from the style card, the tag editor and auto-tagger, the watched folder and the BluFlow export.
 
 ## License
 

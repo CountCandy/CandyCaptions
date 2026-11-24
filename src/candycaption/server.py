@@ -35,6 +35,7 @@ from .pipeline import CaptionError, Captioner, build_snapshot, refresh_template
 from .prefills import (BASE_FIELDS, DEFAULT_SAMPLING, default_prefill, get_prefill, load_prefills, load_presets,
                        save_prefills, save_presets)
 from .runner import Broadcaster, Runner
+from . import style as flavor
 from .signals import combine
 from .store import natural_key
 from .testbench import promote, request_preview, run_bench, summarize
@@ -65,6 +66,7 @@ class State:
     broadcaster = Broadcaster()
     base_url = "http://127.0.0.1:8200"
     bench_busy = False
+    style_job: "flavor.StyleJob | None" = None
 
 
 state = State()
@@ -377,6 +379,7 @@ async def open_dataset(body: dict = Body(...)):
         state.project.store.close()
     state.project = proj
     state.runner = Runner(proj, load_settings(), publish=state.broadcaster.publish, image_base_url=state.base_url)
+    state.style_job = None
     settings = load_settings()
     settings["recent"] = ([str(proj.folder)] + [r for r in settings.get("recent", []) if r != str(proj.folder)])[:5]
     save_settings(settings)
@@ -786,6 +789,62 @@ async def rule_matches(body: dict = Body(...)):
         if any(pattern.search(str(v)) for v in (image["fields"] or {}).values()):
             matches.append({"id": image["id"], "rel": image["rel"]})
     return {"matches": matches}
+
+
+# -- flavor profile (style) -------------------------------------------------
+
+def _style_payload() -> dict[str, Any]:
+    data = flavor.profile(project())
+    data["job"] = state.style_job.status() if state.style_job else {"state": "idle", "message": "", "step": "", "done": 0, "total": 0}
+    return data
+
+
+@app.get("/api/style")
+async def style_get():
+    return await asyncio.to_thread(_style_payload)
+
+
+@app.post("/api/style/run")
+async def style_run(body: dict = Body(default={})):
+    proj, settings = project(), load_settings()
+    if not settings.get("model"):
+        raise fail(409, "No model is chosen. Pick one in the Candy Shop tab first.")
+    if (state.runner and state.runner.busy) or state.bench_busy or (state.style_job and state.style_job.busy):
+        raise fail(409, "Something is already running.")
+    if len(flavor.usable(proj)) < flavor.MIN_SET:
+        raise fail(409, f"A set needs at least {flavor.MIN_SET} images before anything can be called the odd one out.")
+    state.style_job = flavor.StyleJob(proj, settings, state.broadcaster.publish)
+    state.style_job.start(redo=bool(body.get("redo")))
+    await asyncio.sleep(0)
+    return state.style_job.status()
+
+
+@app.post("/api/style/explain")
+async def style_explain(body: dict = Body(...)):
+    settings = load_settings()
+    image = image_or_404(int(body["id"]))
+    client = ModelClient(settings)
+    try:
+        return {"why": await flavor.explain_image(project(), settings, image, client)}
+    finally:
+        await client.close()
+
+
+@app.post("/api/style/ringer")
+async def style_ringer(body: dict = Body(...)):
+    """Test the check with an image you know does not belong. It is never added to the dataset."""
+    settings = load_settings()
+    path = Path((body.get("path") or "").strip().strip('"')).expanduser()
+    if not path.is_file():
+        raise fail(404, "Type or paste the full path of an image file.")
+    client = ModelClient(settings)
+    try:
+        result = await flavor.ringer(project(), settings, path, client)
+    except (OSError, ValueError) as exc:
+        raise fail(415, f"That file could not be read as an image ({exc}).")
+    finally:
+        await client.close()
+    return result
 
 
 # -- find and replace ------------------------------------------------------

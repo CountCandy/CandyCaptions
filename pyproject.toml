@@ -12,6 +12,8 @@ dependencies = [
     "uvicorn[standard]>=0.32.0",
     "httpx>=0.27.0",
     "pillow>=10.0.0",
+    # Pixel measurements for the Flavor Profile (style) tab.
+    "numpy>=1.26",
     # Token counter: the Qwen tokenizer file is read with `tokenizers`; the
     # first-run download uses huggingface-hub. Both are small, no PyTorch.
     "tokenizers>=0.20.0",

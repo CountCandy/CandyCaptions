@@ -13,7 +13,7 @@ from PIL import Image, ImageOps
 
 from . import tokens
 from .config import data_dir
-from .imaging import IMAGE_SUFFIXES, dhash, exif_orientation, file_sha, hamming, has_transparency, upright_filled
+from .imaging import STATS_VERSION, measure, IMAGE_SUFFIXES, dhash, exif_orientation, file_sha, hamming, has_transparency, upright_filled
 from .store import Store
 
 # check key -> (plain name, candy name, why it matters)
@@ -111,16 +111,24 @@ class Project:
             present.add(rel)
             existing = self.store.image_by_rel(rel)
             stat = path.stat()
-            if existing and existing["size"] == stat.st_size and existing["mtime"] == stat.st_mtime and existing["health"]:
+            if (existing and existing["size"] == stat.st_size and existing["mtime"] == stat.st_mtime and existing["health"]
+                    and (existing["health"].get("unreadable") or (existing["health"].get("stats") or {}).get("v") == STATS_VERSION)):
                 continue
             image_id = existing["id"] if existing else self.store.add_image(rel)
             info = self._inspect(path)
+            if not info["health"]["unreadable"]:
+                try:
+                    info["health"]["stats"] = measure(path, settings.get("background", "#ffffff"))
+                except Exception:  # noqa: BLE001  measurements are a bonus; a scan never fails over them
+                    pass
+            if existing and existing["sha"] == info["sha"] and (existing["health"] or {}).get("replaced_at"):
+                info["health"]["replaced_at"] = existing["health"]["replaced_at"]
             if existing and existing["sha"] and info["sha"] and existing["sha"] != info["sha"]:
                 # A different picture under the same name. Everything the store knew was about the
                 # old one, so forget it; a description still on disk is flagged until it is rewritten.
                 info["health"]["replaced_at"] = time.time()
                 self.store.update_image(image_id, status="pending", error=None, fields=None, caption=None, signals=None,
-                                        score=0, reviewed=0, note=None, raw=None, snapshot_id=None, run_id=None)
+                                        score=0, reviewed=0, note=None, raw=None, snapshot_id=None, run_id=None, style=None)
                 self.store.pin(image_id, False)
             self.store.update_image(image_id, size=stat.st_size, mtime=stat.st_mtime, **info)
         self.store.mark_missing(present)
@@ -256,7 +264,10 @@ class Project:
             options = {"quality": 95}
         fixed.save(path, fmt, **options)
         stat = path.stat()
-        self.store.update_image(image["id"], size=stat.st_size, mtime=stat.st_mtime, **self._inspect(path))
+        info = self._inspect(path)
+        if not info["health"]["unreadable"]:
+            info["health"]["stats"] = measure(path, self.store.settings().get("background", "#ffffff"))
+        self.store.update_image(image["id"], size=stat.st_size, mtime=stat.st_mtime, **info)
         self._pair_up(self.store.images())
 
     # -- find and replace ---------------------------------------------------

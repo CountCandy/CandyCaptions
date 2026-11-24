@@ -122,6 +122,32 @@ def create_app(*, chat_logprobs: bool = True, responses: bool = True, responses_
         seed = int(hashlib.sha1((image or text).encode("utf-8")).hexdigest()[:12], 16)
         image_key = hashlib.sha1(image.encode("utf-8")).hexdigest() if image else None
 
+        def is_gray(url: str | None) -> bool:
+            """The one thing the mock can see: whether an image is black and white."""
+            if not url or not url.startswith("data:"):
+                return False
+            import base64
+            import io
+
+            from PIL import Image, ImageStat
+
+            with Image.open(io.BytesIO(base64.b64decode(url.split(",", 1)[1]))) as img:
+                return ImageStat.Stat(img.convert("HSV")).mean[1] < 6
+
+        if schema_name == "style_note":
+            note = "monochrome pencil sketch with rough hatching" if is_gray(image) else "digital illustration with clean line work and flat shading"
+            return 200, json.dumps({"style": note}), {}
+
+        if lower.startswith("you are given style notes"):
+            return 200, "Digital illustration with clean line work and flat shading. Colors are saturated and evenly lit.", {}
+
+        if "made in that same rendering style" in lower:
+            odd = is_gray(image)
+            return 200, "no" if odd else "yes", {"__yes__": ("", 0.06 if odd else 0.95)}
+
+        if "how does the first image differ" in lower:
+            return 200, "The first image is a monochrome pencil sketch, while the others are flat-colored digital illustrations.", {}
+
         if schema_name == "caption_fields":
             tag_line = re.search(r"Tags from the tagger[^:]*: (.*)", text)
             tags = [t.strip().lower().replace(" ", "_") for t in tag_line.group(1).split(",")] if tag_line else []

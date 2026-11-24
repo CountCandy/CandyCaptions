@@ -14,6 +14,7 @@
             filter = null; shown = 240;
             if (App.tabs.bench.reset) App.tabs.bench.reset();
             if (App.tabs.review.reset) App.tabs.review.reset();
+            if (App.tabs.style && App.tabs.style.reset) App.tabs.style.reset();
             refreshHeader();
             render();
             const problems = Object.values(App.dataset.health_summary).reduce((a, b) => a + b, 0);
