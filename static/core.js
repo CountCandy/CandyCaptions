@@ -214,13 +214,30 @@ function overlay(content, { center = false, onclose } = {}) {
 const byName = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 
 // Show one image large. `actions` are extra buttons for the place it was opened from.
-function viewImage(id, rel, actions = []) {
+// With `hint`, the viewer also has the image's Hint box: { value, onsave(text) }.
+function viewImage(id, rel, actions = [], hint = null) {
     let close = () => {};
     const buttons = actions.map(([label, fn]) => h('button', { class: 'quiet small', onclick: () => { close(); fn(); } }, label));
     close = overlay(h('div', { class: 'modal', style: 'width:min(1500px,100%)' },
         h('div', { class: 'spread', style: 'margin-bottom:10px' }, h('b', null, rel),
             h('span', { class: 'row' }, buttons, h('button', { class: 'quiet small', onclick: () => close() }, 'Close'))),
+        hint ? hintBox(id, hint.value, hint.onsave, { style: 'margin-bottom:10px' }) : null,
         h('img', { class: 'zoom', src: thumbUrl(id, 'full'), alt: rel })), { center: true });
+}
+
+// The Hint box: one line telling the model what is in this image. It is sent to the model as fact
+// whenever the image is captioned, and saved the moment you click away.
+function hintBox(id, value, onsave, attrs = {}) {
+    const status = h('span', { class: 'plain' }, 'one line telling the model what is in this image');
+    const area = h('textarea', {
+        rows: 2, value: value || '', placeholder: 'An elf girl sits on a tree stump and plays an ocarina.',
+        onchange: () => act(null, async () => {
+            const saved = (await api(`/api/image/${id}/note`, 'PUT', { text: area.value })).note;
+            status.textContent = saved ? 'saved; used the next time this image is captioned' : 'cleared';
+            if (onsave) onsave(saved);
+        }),
+    });
+    return h('div', attrs, h('label', null, 'Hint', status), area);
 }
 
 // --- Tabs ---

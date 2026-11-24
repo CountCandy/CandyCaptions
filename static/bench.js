@@ -102,11 +102,15 @@
                 h('div', null,
                     h('div', { class: 'spread' }, h('b', { style: 'font-size:12.5px' }, pin.rel),
                         h('span', null, h('button', { class: 'quiet small', onclick: () => showRequest(pin) }, 'Show request'))),
-                    h('label', { style: 'margin-top:6px' }, 'What you know about this image', h('span', { class: 'plain' }, 'told to the model as fact, here and in every run')),
-                    h('textarea', {
-                        rows: 2, placeholder: 'An elf girl sits on a tree stump and plays an ocarina.', value: pin.note || '',
-                        onchange: (e) => act(null, async () => { pin.note = (await api(`/api/image/${pin.id}/note`, 'PUT', { text: e.target.value })).note; }),
-                    }),
+                    hintBox(pin.id, pin.note, (saved) => { pin.note = saved; }, { style: 'margin-top:6px' }),
+                    pin.facts.length && !pin.note ? h('button', {
+                        class: 'quiet small', style: 'margin-top:6px', title: 'Tasting Notes are never shown to the model. This moves the text into the Hint, which is.',
+                        onclick: (e) => act(e.target, async () => {
+                            await api(`/api/image/${pin.id}/note`, 'PUT', { text: pin.facts.join(' ') });
+                            bench = await api('/api/test/facts', 'PUT', { id: pin.id, facts: [] });
+                            render();
+                        }),
+                    }, '↑ Move these Tasting Notes into the Hint') : null,
                     h('label', { style: 'margin-top:8px' }, candy('Tasting Notes', 'answer key, one fact per line. Used only to score captions; the model never sees it')),
                     h('textarea', {
                         rows: 3, placeholder: 'two people\nred scarf\nnight', value: pin.facts.join('\n'),

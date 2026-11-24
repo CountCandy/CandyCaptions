@@ -42,7 +42,21 @@ from .wordlists import DEFAULT_WORDLISTS, load_wordlists, save_wordlists
 
 logger = logging.getLogger(__name__)
 app = FastAPI(title="CandyCaption")
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+class FreshStatic(StaticFiles):
+    """Static files the browser must check back for, so an update is never hidden by an old copy."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/static", FreshStatic(directory=str(STATIC_DIR)), name="static")
+
+
+def static_version() -> str:
+    """Changes whenever any page file does. It goes in every script and stylesheet address."""
+    return str(int(max(p.stat().st_mtime for p in STATIC_DIR.iterdir() if p.is_file())))
 
 
 class State:
@@ -108,12 +122,15 @@ def captioner(client: ModelClient, settings: dict[str, Any]) -> Captioner:
 
 @app.get("/")
 async def index():
-    return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"})
+    # Each script address carries a version, so a browser holding last week's copy asks for the new one.
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    html = re.sub(r'(/static/[\w.-]+\.(?:js|css))"', rf'\1?v={static_version()}"', html)
+    return Response(html, media_type="text/html", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "page_version": static_version()}
 
 
 @app.get("/api/events")
@@ -329,7 +346,7 @@ def dataset_payload() -> dict[str, Any]:
             # Changes whenever the file does; the page puts it in every picture address.
             "v": f"{int(image['mtime'] or 0)}-{image['size'] or 0}",
             "status": image["status"], "has_caption": proj.has_caption(image), "has_tags": proj.tags_path(image).exists(),
-            "health": badges, "pinned": image["id"] in pins, "reviewed": bool(image["reviewed"]),
+            "health": badges, "note": image.get("note") or "", "pinned": image["id"] in pins, "reviewed": bool(image["reviewed"]),
         })
     return {
         "open": True, "id": proj.id, "folder": str(proj.folder), "settings": proj.store.settings(), "images": images,

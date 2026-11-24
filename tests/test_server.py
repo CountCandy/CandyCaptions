@@ -289,3 +289,15 @@ async def test_the_answer_key_never_reaches_the_model_but_the_note_does(api, dat
 
     preview = (await api.post("/api/test/request", json={"id": target["id"]})).json()
     assert "An elf girl" in str(preview["look"]["body"]) and "An elf girl" in str(preview["compose"]["body"])
+
+
+async def test_the_page_always_loads_its_current_scripts(api):
+    page = await api.get("/")
+    version = (await api.get("/health")).json()["page_version"]
+    assert page.headers["cache-control"] == "no-store"
+    assert f'/static/core.js?v={version}"' in page.text and f'/static/style.css?v={version}"' in page.text
+    assert page.text.count(f"?v={version}") == 10          # nine scripts and the stylesheet
+    script = await api.get("/static/bench.js")
+    assert script.headers["cache-control"] == "no-cache" and "hintBox" in script.text
+    # Pantry comes before Taste Test, left to right.
+    assert page.text.index('data-tab="dataset"') < page.text.index('data-tab="bench"')

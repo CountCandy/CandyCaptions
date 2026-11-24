@@ -223,10 +223,7 @@
         const counter = h('span', { class: 'counter' + (over ? ' over' : ''), title: `Tags plus description, counted with: ${d.tokenizer.source}` },
             `${d.words} words · ${d.tokens} of ${d.token_limit} tokens${d.tokenizer.exact ? '' : ' (approximate)'}${over ? ' · over the limit' : ''}`);
         caption.addEventListener('input', () => { counter.textContent = `${caption.value.trim().split(/\s+/).filter(Boolean).length} words · saves when you click away`; counter.className = 'counter'; });
-        const extra = h('textarea', {
-            rows: 2, class: 'grow', value: d.note || '', placeholder: 'An elf girl sits on a tree stump and plays an ocarina.',
-            onchange: (e) => act(null, async () => { d.note = (await api(`/api/image/${d.id}/note`, 'PUT', { text: e.target.value })).note; toast('Saved. Press Regenerate to caption this image again with it.'); }),
-        });
+        const hint = hintBox(d.id, d.note, (saved) => { d.note = saved; }, { class: 'grow' });
 
         const fields = (d.field_defs || []).map((def) => {
             const value = (d.fields || {})[def.key] || '';
@@ -276,12 +273,11 @@
                         h('button', { class: 'quiet', onclick: openChat }, candy('Sweet Talk', 'review chat'))),
                     h('label', null, 'Tags', h('span', { class: 'plain' }, d.rel.replace(/\.[^.]+$/, '') + '.txt')),
                     h('textarea', { rows: 3, value: d.tags, onchange: (e) => act(null, () => saveText('tags', e.target.value)) }),
-                    h('label', { style: 'margin-top:12px' }, 'What you know about this image', h('span', { class: 'plain' }, 'told to the model as fact, kept with the image and used on every later run')),
-                    h('div', { class: 'row', style: 'align-items:flex-end' }, extra,
+                    h('div', { class: 'row', style: 'align-items:flex-end; margin-top:12px' }, hint,
                         h('button', {
                             id: 'reviewRegenerate', class: 'quiet', onclick: (e) => act(e.target, async () => {
                                 e.target.textContent = 'Looking again…';
-                                refreshFrom(await api(`/api/review/${d.id}/regenerate`, 'POST', { extra: extra.value }));
+                                refreshFrom(await api(`/api/review/${d.id}/regenerate`, 'POST', { extra: $('textarea', hint).value }));
                             }),
                         }, 'Regenerate')))),
             d.fields ? [h('h3', { style: 'margin-top:18px' }, 'Fields', h('span', { class: 'plain' }, 'editing one rewrites the description')), fields] : null,

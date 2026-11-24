@@ -127,7 +127,7 @@
             h('div', { class: 'spread', style: 'margin-bottom:10px' },
                 h('h2', null, filter ? `${images.length} images: ${d.health_checks[filter].name.toLowerCase()}` : 'All images'),
                 h('span', { class: 'row' },
-                    h('span', { class: 'hint' }, 'Click an image to see it large. ★ pins it to the Sampler Box (test set).'),
+                    h('span', { class: 'hint' }, 'Click an image to see it large and give it a Hint. ★ pins it to the Sampler Box (test set).'),
                     h('label', { style: 'margin:0' }, 'Order'),
                     h('select', { style: 'width:auto', onchange: (e) => { order = e.target.value; localStorage.setItem('pantryOrder', order); render(); } },
                         [['az', 'File name, A to Z'], ['za', 'File name, Z to A'], ['todo', 'Not captioned first'], ['problems', 'Most freshness notes first']]
@@ -140,10 +140,12 @@
                         act(null, async () => { await api('/api/test/pin', 'POST', { id: image.id, pinned: !image.pinned }); image.pinned = !image.pinned; pin.classList.toggle('on', image.pinned); });
                     },
                 }, '★');
-                return h('div', { class: 'thumb', title: `${image.rel} · ${image.width}×${image.height}`, onclick: () => { if (!unreadable) viewImage(image.id, image.rel, image.has_caption ? [['Open in the Sorting Table', () => App.tabs.review.open(image.id)]] : []); } },
+                return h('div', { class: 'thumb', title: `${image.rel} · ${image.width}×${image.height}`, onclick: () => { if (!unreadable) viewImage(image.id, image.rel, image.has_caption ? [['Open in the Sorting Table', () => App.tabs.review.open(image.id)]] : [], { value: image.note, onsave: (saved) => { image.note = saved; render(); } }); } },
                     unreadable ? h('div', { style: 'aspect-ratio:1; display:grid; place-items:center', class: 'muted' }, 'cannot be read') : h('img', { src: thumbUrl(image.id), loading: 'lazy' }),
                     unreadable ? null : pin,
-                    image.has_caption ? h('span', { class: 'chip good state', title: 'Has a description' }, '✓') : null,
+                    h('span', { class: 'state chips' },
+                        image.has_caption ? h('span', { class: 'chip good', title: 'Has a description' }, '✓') : null,
+                        image.note ? h('span', { class: 'chip neutral', style: 'background:rgba(0,0,0,0.6)', title: `Hint: ${image.note}` }, '✎ hint') : null),
                     h('div', { class: 'name' }, image.rel),
                     h('div', { class: 'chips' }, image.health.map((b) => {
                         const chip = healthChip(b.check, b.detail);
