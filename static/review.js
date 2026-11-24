@@ -4,6 +4,7 @@
     const panel = $('#panel-review');
     let rows = [], totals = { done: 0, reviewed: 0, flagged: 0, failed: 0 };
     let query = '';
+    let sortBy = localStorage.getItem('reviewSort') === 'name' ? 'name' : 'score';
     let currentId = null, detail = null;
     let chatOpen = false;
 
@@ -23,7 +24,7 @@
     }
 
     async function loadList() {
-        const data = await api('/api/review?q=' + encodeURIComponent(query));
+        const data = await api('/api/review?q=' + encodeURIComponent(query) + '&sort=' + sortBy);
         rows = data.rows; totals = data.totals;
         setCount();
     }
@@ -88,7 +89,7 @@
         detail = fresh;
         const row = rows.find((r) => r.id === fresh.id);
         if (row) Object.assign(row, { caption: fresh.caption, score: fresh.score, reasons: fresh.reasons, words: fresh.words, tokens: fresh.tokens, status: fresh.status });
-        rows.sort((a, b) => (a.status === 'failed' ? 0 : 1) - (b.status === 'failed' ? 0 : 1) || b.score - a.score);
+        if (sortBy === 'score') rows.sort((a, b) => (a.status === 'failed' ? 0 : 1) - (b.status === 'failed' ? 0 : 1) || b.score - a.score);
         renderList();
         renderDetail();
     }
@@ -331,6 +332,15 @@
                         chip.onclick = () => applyFilter(query.trim() === `signal:${signal}` ? '' : `signal:${signal}`);
                         return chip;
                     })),
+                h('div', { class: 'row', style: 'margin-bottom:8px' },
+                    h('label', { style: 'margin:0' }, 'Order'),
+                    h('select', {
+                        style: 'width:auto; flex:1', onchange: (e) => {
+                            sortBy = e.target.value;
+                            localStorage.setItem('reviewSort', sortBy);
+                            act(null, async () => { await loadList(); renderList(); const active = $('.queue-item.active', panel); if (active) active.scrollIntoView({ block: 'nearest' }); });
+                        },
+                    }, [['score', 'Most doubtful first'], ['name', 'By file name']].map(([value, label]) => h('option', { value, selected: sortBy === value }, label)))),
                 flagLegend(),
                 h('p', { class: 'hint', id: 'reviewTotals', style: 'margin:8px 0' }),
                 h('div', { class: 'queue', id: 'reviewQueue' })),

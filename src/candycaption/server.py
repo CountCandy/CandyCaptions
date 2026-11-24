@@ -36,6 +36,7 @@ from .prefills import (BASE_FIELDS, DEFAULT_SAMPLING, default_prefill, get_prefi
                        save_prefills, save_presets)
 from .runner import Broadcaster, Runner
 from .signals import combine
+from .store import natural_key
 from .testbench import promote, request_preview, run_bench, summarize
 from .wordlists import DEFAULT_WORDLISTS, load_wordlists, save_wordlists
 
@@ -545,7 +546,7 @@ def review_row(proj: Project, image: dict[str, Any], settings: dict[str, Any], n
 
 
 @app.get("/api/review")
-async def review_list(q: str = ""):
+async def review_list(q: str = "", sort: str = "score"):
     proj, settings, names = project(), load_settings(), field_names()
     try:
         matches = compile_filter(q)
@@ -581,7 +582,10 @@ async def review_list(q: str = ""):
             row.pop("fields")
             row.pop("tags")
             rows.append(row)
-        rows.sort(key=lambda r: (r["status"] != "failed", -r["score"], r["rel"]))
+        if sort == "name":
+            rows.sort(key=lambda r: natural_key(r["rel"]))
+        else:
+            rows.sort(key=lambda r: (r["status"] != "failed", -r["score"], natural_key(r["rel"])))
         return {"rows": rows, "totals": totals}
 
     return await asyncio.to_thread(build)

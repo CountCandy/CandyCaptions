@@ -178,3 +178,16 @@ async def test_folder_picker_opens_at_the_start_folder(api, dataset):
     assert (await api.get("/api/browse", params={"roots": "true"})).json()["path"] == ""      # the drive list is still reachable
     await api.put("/api/settings", json={"start_folder": "/no/longer/there"})
     assert (await api.get("/api/browse")).json()["path"] == ""
+
+
+async def test_lists_sort_by_name_in_natural_order(api, dataset):
+    for name in ("ta (2).png", "ta (16).png", "ta (10).png"):
+        make_image(dataset / name, (5, 90, 200), tags="1girl")
+    await api.post("/api/dataset/rescan")
+    names = [i["rel"] for i in (await api.get("/api/dataset")).json()["images"]]
+    assert [n for n in names if n.startswith("ta")] == ["ta (2).png", "ta (10).png", "ta (16).png"]
+    await run_batch(api)
+    by_name = [r["rel"] for r in (await api.get("/api/review", params={"sort": "name"})).json()["rows"]]
+    assert by_name == ["clash.png", "plain.png", "ta (2).png", "ta (10).png", "ta (16).png", "unsure.png"]
+    by_score = (await api.get("/api/review")).json()["rows"]
+    assert [r["score"] for r in by_score] == sorted((r["score"] for r in by_score), reverse=True)

@@ -106,7 +106,9 @@ DEFAULT_PREFILLS: list[dict[str, Any]] = [
             "style": {"in_caption": False},
         }),
         "toggles": _toggles(set(), {"use_trigger": "Begin the caption with {trigger}."}),
-        "banned_words": COMMON_BANNED + ["art style", "in the style of", "anime style", "stylized", "stylised"],
+        # The last four keep a "nothing wrong with it" Quality note from turning into a sentence of the caption.
+        "banned_words": COMMON_BANNED + ["art style", "in the style of", "anime style", "stylized", "stylised",
+                                         "no visible defects", "no watermark", "no visible watermark", "the piece is finished"],
         "preset": "Balanced", "min_words": 40, "max_words": 70,
     },
     {

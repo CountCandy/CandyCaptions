@@ -10,6 +10,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 import sqlite3
 import threading
 import time
@@ -51,6 +52,11 @@ CREATE TABLE IF NOT EXISTS test_runs (id INTEGER PRIMARY KEY, created REAL, labe
 """
 
 JSON_COLUMNS = {"fields", "signals", "health"}
+
+
+def natural_key(name: str) -> list:
+    """Sort key that reads numbers as numbers, so "ta (2)" comes before "ta (16)"."""
+    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", name)]
 
 
 def project_id(folder: Path) -> str:
@@ -122,7 +128,8 @@ class Store:
 
     def images(self, include_missing: bool = False) -> list[dict[str, Any]]:
         where = "" if include_missing else "WHERE missing=0"
-        return [self._image(r) for r in self._all(f"SELECT * FROM images {where} ORDER BY rel")]
+        rows = [self._image(r) for r in self._all(f"SELECT * FROM images {where}")]
+        return sorted(rows, key=lambda image: natural_key(image["rel"]))
 
     def image(self, image_id: int) -> dict[str, Any] | None:
         rows = self._all("SELECT * FROM images WHERE id=?", (image_id,))
