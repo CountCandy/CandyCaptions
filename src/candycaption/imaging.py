@@ -114,7 +114,8 @@ def tiny_test_image() -> str:
     return data_url(buffer.getvalue())
 
 
-STATS_VERSION = 2
+STATS_VERSION = 3
+SIGNATURE_SIDE = 32      # a tiny grayscale copy kept with the measurements, for finding look-alikes
 
 
 def _grid_ratio(gray: np.ndarray, axis: int) -> float:
@@ -168,4 +169,5 @@ def measure(path: Path, background: str = "#ffffff") -> dict[str, float]:
         "contrast": round(float(light.std()), 3),
         "detail": round(detail, 3),
         "hues": [round(float(h), 4) for h in hues],
+        "sig": base64.b64encode(small.convert("L").resize((SIGNATURE_SIDE, SIGNATURE_SIDE), Image.BOX).tobytes()).decode("ascii"),
     }

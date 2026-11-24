@@ -35,6 +35,7 @@ from .pipeline import CaptionError, Captioner, build_snapshot, refresh_template
 from .prefills import (BASE_FIELDS, DEFAULT_SAMPLING, default_prefill, get_prefill, load_prefills, load_presets,
                        save_prefills, save_presets)
 from .runner import Broadcaster, Runner
+from . import similar
 from . import style as flavor
 from .signals import combine
 from .store import natural_key
@@ -844,6 +845,25 @@ async def style_choice(which: str, body: dict = Body(...)):
         raise fail(409, "The style check is running. Change this once it has finished.")
     flavor.set_choice(project(), f"style_{which}", body.get("ids"))
     return await asyncio.to_thread(_style_payload)
+
+
+@app.get("/api/similar")
+async def similar_get():
+    """Pairs of images or captions that are too alike. Measured from the files; no model is used."""
+    return await asyncio.to_thread(similar.find, project())
+
+
+@app.put("/api/similar/fine")
+async def similar_fine(body: dict = Body(...)):
+    """The user looked at a pair and it is not a problem, so stop listing it."""
+    similar.dismiss(project(), int(body["a"]), int(body["b"]))
+    return {"ok": True}
+
+
+@app.delete("/api/similar/fine")
+async def similar_restore():
+    similar.restore(project())
+    return await asyncio.to_thread(similar.find, project())
 
 
 @app.post("/api/style/explain")

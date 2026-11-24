@@ -5,6 +5,14 @@
     const panel = $('#panel-style');
     let data = null;
     let ringerResult = null;
+    let alike = null;          // pairs that are too similar, from /api/similar
+    let shown = 30;
+
+    // How alike a pair must be before it is listed. Kept in this browser; storage can be unavailable.
+    function bar(name, fallback) {
+        try { const v = parseFloat(localStorage.getItem(`alike-${name}`)); return Number.isFinite(v) ? v : fallback; } catch { return fallback; }
+    }
+    function setBar(name, value) { try { localStorage.setItem(`alike-${name}`, value); } catch { /* the choice just lasts until the page closes */ } }
 
     const percent = (p) => `${Math.round(p * 100)}%`;
     const busy = () => data && data.job.state === 'running';
@@ -144,6 +152,62 @@
                         h('td', { class: 'hint' }, row.note || ''))))) : null);
     }
 
+    function alikeCard() {
+        if (!alike) return h('div', { class: 'card' }, h('h2', null, candy('Two of a Kind', 'images or captions that are too alike')), h('p', { class: 'hint' }, 'Comparing the batch…'));
+        const bars = { picture: bar('picture', 0.9), caption: bar('caption', 0.6) };
+        const list = h('div');
+        const fill = () => {
+            const hits = alike.pairs.filter((p) => (p.picture != null && p.picture >= bars.picture) || (p.caption != null && p.caption >= bars.caption));
+            const row = (pair) => {
+                const byPicture = pair.picture != null && pair.picture >= bars.picture;
+                const byCaption = pair.caption != null && pair.caption >= bars.caption;
+                const side = (image, text) => h('div', { style: 'flex:1; min-width:0' },
+                    h('div', { class: 'row', style: 'align-items:flex-start' }, thumb(image, 96),
+                        h('div', { style: 'min-width:0' }, h('b', { style: 'font-size:13px; overflow-wrap:anywhere' }, image.rel),
+                            byCaption && text ? h('div', { class: 'hint', style: 'margin-top:4px; max-height:7.5em; overflow:auto' }, text) : null)));
+                const line = h('div', { style: 'padding:10px 0; border-bottom:1px solid var(--input-border)' },
+                    h('div', { class: 'spread', style: 'margin-bottom:6px' },
+                        h('div', { class: 'chips' },
+                            pair.picture != null ? h('span', { class: 'chip ' + (byPicture ? 'health' : 'neutral'), title: 'How alike the two pictures are, from small grayscale copies' }, `Pictures: ${percent(pair.picture)} alike (${pair.kind_name})`) : null,
+                            pair.caption != null ? h('span', { class: 'chip ' + (byCaption ? 'health' : 'neutral'), title: 'How alike the two captions are. Words that nearly every caption uses count for little.' }, `Captions: ${percent(pair.caption)} alike`) : null),
+                        h('button', { class: 'quiet small', title: 'Stops listing this pair. Nothing is deleted or changed.',
+                            onclick: (e) => act(e.target, async () => {
+                                await api('/api/similar/fine', 'PUT', { a: pair.a.id, b: pair.b.id });
+                                alike.pairs = alike.pairs.filter((p) => p !== pair); alike.dismissed += 1; fill();
+                            }) }, 'These are fine')),
+                    h('div', { class: 'row', style: 'align-items:flex-start; gap:16px' }, side(pair.a, pair.captions && pair.captions[0]), side(pair.b, pair.captions && pair.captions[1])));
+                return line;
+            };
+            list.replaceChildren(
+                h('h3', null, hits.length ? `${hits.length} pair${hits.length === 1 ? '' : 's'} to look at, most alike first` : null),
+                hits.length ? hits.slice(0, shown).map(row)
+                    : h('p', null, h('span', { class: 'chip good' }, '✓'), ' No pair is this alike. Lower a slider to see looser matches.'),
+                hits.length > shown ? h('button', { class: 'quiet small', style: 'margin-top:10px', onclick: () => { shown += 30; fill(); } }, `Show more (${hits.length - shown} left)`) : null,
+                alike.more ? h('p', { class: 'hint', style: 'margin-top:8px' }, `${alike.more} looser pairs are not listed. Deal with the closest ones first.`) : null,
+                alike.dismissed ? h('p', { class: 'hint', style: 'margin-top:8px' }, `${alike.dismissed} pair${alike.dismissed === 1 ? '' : 's'} marked as fine. `,
+                    h('a', { href: '#', onclick: (e) => { e.preventDefault(); act(null, async () => { alike = await api('/api/similar/fine', 'DELETE'); render(); }); } }, 'List them again')) : null);
+        };
+        const slider = (name, label, floor, note) => {
+            const value = h('span', null, percent(bars[name]));
+            return h('div', { class: 'slider-row', style: 'grid-template-columns: 80px 1fr 48px', title: note },
+                h('span', null, label),
+                h('input', { type: 'range', min: floor, max: 1, step: 0.01, value: bars[name],
+                    oninput: (e) => { bars[name] = parseFloat(e.target.value); value.textContent = percent(bars[name]); setBar(name, e.target.value); shown = 30; fill(); } }),
+                value);
+        };
+        fill();
+        return h('div', { class: 'card' },
+            h('h2', null, candy('Two of a Kind', 'images or captions that are too alike')),
+            h('p', { class: 'hint', style: 'margin:4px 0 10px' },
+                `Near-copies get learned several times over. This compares all ${alike.images} images in the folder with each other, and their ${alike.captions} captions, without the model. `
+                + 'It finds the same picture resized, recolored, mirrored, cropped or with a part changed, and captions that say nearly the same thing. '
+                + 'It does not see the same pose drawn differently. Sets with plain backgrounds and centered subjects score high all round, so raise the slider for those. Nothing is deleted: you decide what to do with each pair.'),
+            h('div', { class: 'grid2', style: 'margin-bottom:6px' },
+                slider('picture', 'Pictures', alike.picture_floor, 'List a pair when its pictures are at least this alike'),
+                slider('caption', 'Captions', alike.caption_floor, 'List a pair when its captions are at least this alike')),
+            list);
+    }
+
     function ringerCard() {
         const input = h('input', { type: 'text', class: 'grow', placeholder: 'Full path of an image that does not belong, such as C:\\other\\drawing.png' });
         const slot = h('div', { style: 'margin-top:10px' });
@@ -184,7 +248,7 @@
     function render() {
         if (needsDataset(panel)) return;
         if (!data) { panel.replaceChildren(h('div', { class: 'empty' }, 'Measuring the batch…')); return; }
-        panel.replaceChildren(macroCard(), lensCard(), ringerCard());
+        panel.replaceChildren(macroCard(), lensCard(), ringerCard(), alikeCard());
         showProgress();
     }
 
@@ -202,9 +266,14 @@
 
     App.tabs.style = {
         show: () => act(null, async () => {
-            if (App.dataset.open) data = await api('/api/style');
+            if (App.dataset.open) {
+                data = await api('/api/style');
+                render();
+                alike = await api('/api/similar');      // compares every pair, so it comes after the rest is on screen
+                shown = 30;
+            }
             render();
         }),
-        reset: () => { data = null; ringerResult = null; },
+        reset: () => { data = null; ringerResult = null; alike = null; },
     };
 })();

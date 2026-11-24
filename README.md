@@ -87,7 +87,7 @@ first run: it sends one tiny image and records what your server supports.
 | Taste Test | Test bench | Pin 5 to 10 hard images, give an image a Hint if the model needs help, write a few answer-key facts, and compare recipe versions on them before a full run. |
 | Candy Factory | Run | Start, pause, resume and stop the batch, and watch it live. |
 | Sorting Table | Review | The doubtful captions, worst first, with the field in doubt named. Fix them by hand or by talking to the model. All caption editing is here, including find and replace. |
-| Flavor Profile | Style | Find the images that do not fit the rest of the set: source quality from the pixels, and a style check of each image against the set's own style. |
+| Flavor Profile | Style | Find the images that do not fit the rest of the set: source quality from the pixels, and a style check of each image against the set's own style. Also lists pairs of images or captions that are too alike. |
 
 ## Update
 
@@ -224,6 +224,7 @@ src/candycaption/
 ├── connect.py      Test connection
 ├── dataset.py      scanning, caption files, health checks, find and replace
 ├── style.py        Flavor Profile: source-quality pass, style lens, ringer test
+├── similar.py      Flavor Profile: pairs of images or captions that are too alike
 ├── store.py        the per-dataset SQLite store
 ├── testbench.py    test bench runs, fact scoring, promote
 ├── filters.py      review filters with AND, OR, NOT
@@ -252,6 +253,11 @@ for your eye, not a verdict. A set needs at least 8 images.
   shares. Use it when a set mixes two styles or when most of the set is not what you want.
 - **Plant a Ringer** ranks an image you know does not belong, without adding it to the dataset. If your
   ringer does not come out near the top, do not trust the ranking for that kind of difference.
+- **Two of a Kind** lists pairs that are too alike, across the whole folder and without the model. Pictures:
+  the same image resized, recolored, mirrored, cropped or with a part changed. Captions: two that say nearly
+  the same thing, with words every caption uses counting for little. Two sliders set how alike a pair must
+  be. It does not see the same pose drawn differently. Nothing is deleted; **These are fine** stops listing
+  a pair.
 
 ## Not built yet
 

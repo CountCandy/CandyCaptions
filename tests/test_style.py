@@ -4,11 +4,12 @@ import random
 
 import httpx
 import pytest
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageOps
 
 from candycaption import server
 from candycaption.config import save_settings
 from candycaption.imaging import measure
+from candycaption.similar import caption_pairs, decode, picture_pairs
 from candycaption.style import MIN_SET, macro_flags, pixel_outliers
 
 
@@ -249,3 +250,65 @@ async def test_targets_cost_one_request_per_image_not_one_per_target(api, styled
     assert len(requests) == 3 + 1 + 12
     assert data["checked"] == 12 and data["job"]["steps"] == 2 and data["job"]["step_total"] == 12
     assert sum(1 for r in data["rows"] if r["note"]) == 3
+
+
+# -- Two of a Kind: images or captions that are too alike ------------------
+
+def test_look_alikes_are_found_whatever_was_done_to_the_copy(styled):
+    first = Image.open(styled / "ta (1).png")
+    ImageEnhance.Color(first).enhance(0.3).save(styled / "z_recolored.png")
+    ImageOps.mirror(first).save(styled / "z_mirrored.png")
+    first.crop((60, 40, 860, 880)).save(styled / "z_cropped.png")
+    first.crop((230, 310, 870, 830)).save(styled / "z_cropped_hard.png")
+    patched = first.copy()
+    ImageDraw.Draw(patched).ellipse([380, 300, 470, 380], fill=(250, 240, 230))
+    patched.save(styled / "z_patched.png")
+    files = sorted(styled.glob("*.png"))
+    names = [f.name for f in files]
+    pairs = picture_pairs([decode(measure(f)["sig"]) for f in files])
+    one = names.index("ta (1).png")
+    kinds = {names[b]: (score, kind) for (a, b), (score, kind) in pairs.items() if a == one}
+    assert kinds["z_recolored.png"][1] == "same" and kinds["z_mirrored.png"][1] == "mirrored"
+    assert kinds["z_cropped.png"][1] == "crop" and kinds["z_cropped_hard.png"][1] == "crop" and kinds["z_patched.png"][1] == "edited"
+    assert all(score > 0.93 for score, _ in kinds.values())
+    # Twelve different pictures: none of them pairs with another.
+    assert not [pair for pair in pairs if names[pair[0]].startswith("ta") and names[pair[1]].startswith("ta")]
+
+
+def test_caption_pairs_ignore_the_words_every_caption_shares():
+    opening = "A digital painting in a soft watercolor style. "
+    texts = [
+        opening + "A red fox sleeps under a birch tree beside a frozen lake at dawn.",
+        opening + "A red fox is sleeping under a birch tree next to a frozen lake at dawn.",
+        opening + "Two sailors mend a torn net on a crowded harbor wall in summer rain.",
+        opening + "An old clockmaker bends over a brass gear at a cluttered workbench.",
+        "",
+    ]
+    pairs = caption_pairs(texts)
+    assert list(pairs) == [(0, 1)] and pairs[(0, 1)] > 0.5      # the shared opening alone makes nothing a match
+
+
+async def test_similar_lists_pairs_and_lets_one_be_marked_fine(api, styled):
+    first = Image.open(styled / "ta (1).png")
+    first.resize((450, 450)).save(styled / "small copy.png")
+    (styled / "ta (3)_nl.txt").write_text("A knight in green armor rides a gray horse across a stone bridge.\n", encoding="utf-8")
+    (styled / "ta (4)_nl.txt").write_text("A knight in green armor is riding a gray horse over a stone bridge.\n", encoding="utf-8")
+    others = ["Three paper lanterns float above a quiet canal at night.", "A baker dusts flour over a wooden table.",
+              "Two owls perch on a snowy fence post.", "A lighthouse stands against a violet storm.",
+              "Children chase a kite along a windy beach.", "A violinist plays beneath a flickering street lamp."]
+    for n, text in enumerate(others, start=5):
+        (styled / f"ta ({n})_nl.txt").write_text(text + "\n", encoding="utf-8")
+    await api.post("/api/dataset/open", json={"path": str(styled)})
+    data = (await api.get("/api/similar")).json()
+    assert data["images"] == 13 and data["captions"] == 8 and data["dismissed"] == 0
+    found = {(p["a"]["rel"], p["b"]["rel"]): p for p in data["pairs"]}
+    assert set(found) == {("small copy.png", "ta (1).png"), ("ta (3).png", "ta (4).png")}
+    copy, words = found[("small copy.png", "ta (1).png")], found[("ta (3).png", "ta (4).png")]
+    assert copy["picture"] > 0.97 and copy["kind"] == "same" and copy["caption"] is None
+    assert words["picture"] is None and words["caption"] > 0.5 and "knight" in words["captions"][0]
+
+    await api.put("/api/similar/fine", json={"a": copy["a"]["id"], "b": copy["b"]["id"]})
+    after = (await api.get("/api/similar")).json()
+    assert len(after["pairs"]) == 1 and after["dismissed"] == 1
+    again = (await api.request("DELETE", "/api/similar/fine")).json()
+    assert len(again["pairs"]) == 2 and again["dismissed"] == 0
