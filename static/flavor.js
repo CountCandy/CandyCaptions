@@ -56,13 +56,13 @@
 
     function macroCard() {
         return h('div', { class: 'card' },
-            h('h2', null, candy('Source quality', 'macro pass: measured from the pixels, no model needed')),
+            h('h2', null, candy('Quality Control', 'source quality: measured from the pixels, no model needed')),
             h('p', { class: 'hint', style: 'margin:4px 0 10px' },
                 'Each image is compared with the rest of this folder, not with a fixed limit. Compression or softness that the whole set shares is not flagged, because then it is not the odd one out.'),
             !data.enough ? h('p', { class: 'hint' }, `This needs at least ${data.min_set} images to compare; ${data.count} ${data.count === 1 ? 'is' : 'are'} being checked.`)
             : data.macro.length
                 ? data.macro.map((row) => h('div', { class: 'row', style: 'padding:8px 0; border-bottom:1px solid var(--input-border)' },
-                    thumb(row), h('div', { class: 'grow', style: 'min-width:0' }, h('b', { style: 'font-size:13px' }, row.rel),
+                    thumb(row), h('div', { class: 'grow', style: 'min-width:0' }, h('b', { style: 'font-size:14px' }, row.rel),
                         h('div', { class: 'chips', style: 'margin-top:4px' }, row.macro.map((flag) => h('span', { class: 'chip health', title: flag.detail }, flag.name))),
                         h('div', { class: 'hint', style: 'margin-top:2px' }, row.macro.map((flag) => flag.detail).join('; ')))))
                 : h('p', null, h('span', { class: 'chip good' }, '✓'), ' No image stands apart from the rest in sharpness, resolution, compression or grain.'));
@@ -74,7 +74,7 @@
         return h('div', { class: 'row', style: 'align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--input-border)' },
             thumb(row, 96),
             h('div', { class: 'grow', style: 'min-width:0' },
-                h('b', { style: 'font-size:13px' }, row.rel),
+                h('b', { style: 'font-size:14px' }, row.rel),
                 h('div', { class: 'chips', style: 'margin-top:4px' },
                     row.target ? h('span', { class: 'chip good', title: 'One of your target images' }, '★ target') : null,
                     row.match != null ? h('span', { class: 'chip ' + (byModel ? 'bad' : 'neutral'), title: row.measured ? 'Probability the model says this image is in the set\'s style' : 'A plain yes or no; this server gives no probabilities' },
@@ -103,11 +103,12 @@
                 data.targets.length
                     ? 'With target images set, the style is written from them alone. Then the model looks at each image once and answers one question: is this made in that style? It is one request per image however many targets there are. The result is a ranking for your eye, not a verdict.'
                     : 'The model writes a short style note for each image, sums the notes up into one style for the set, then looks at each image again and answers one question: is this made in that style? That is two passes over the set the first time and one after that. The result is a ranking for your eye, not a verdict.'),
-            h('div', { class: 'grid2', style: 'margin-bottom:12px' },
+            h('div', { class: 'grid2', style: 'margin-bottom:12px; align-items:stretch' },
                 h('div', { class: 'notice' },
-                    h('b', null, 'Images to check: '), data.selection ? `${data.count} of ${data.total} chosen` : `all ${data.total}`,
+                    h('b', null, candy('Pick and Mix', 'which images are checked')),
+                    h('div', { style: 'margin-top:4px' }, data.selection ? `${data.count} of ${data.total} images chosen.` : h('span', { class: 'hint' }, `All ${data.total} images. Choose some and everything above Two of a Kind applies to those only.`)),
                     h('div', { class: 'row', style: 'margin-top:8px' },
-                        h('button', { class: 'quiet small', disabled: busy(), onclick: () => pickImages('Images to check', 'only these are compared and ranked',
+                        h('button', { class: 'quiet small', disabled: busy(), onclick: () => pickImages('Pick and Mix', 'only these images are compared and ranked',
                             'Pick the images to look for an odd one out among. Everything on this tab then applies to these only.',
                             data.rows.map((r) => r.id), (ids) => choose('selection', ids.length === data.total ? null : ids)) }, 'Choose images'),
                         data.selection ? h('button', { class: 'quiet small', disabled: busy(), onclick: () => choose('selection', null) }, 'Check all again') : null)),
@@ -161,10 +162,9 @@
             const row = (pair) => {
                 const byPicture = pair.picture != null && pair.picture >= bars.picture;
                 const byCaption = pair.caption != null && pair.caption >= bars.caption;
-                const side = (image, text) => h('div', { style: 'flex:1; min-width:0' },
-                    h('div', { class: 'row', style: 'align-items:flex-start' }, thumb(image, 96),
-                        h('div', { style: 'min-width:0' }, h('b', { style: 'font-size:13px; overflow-wrap:anywhere' }, image.rel),
-                            byCaption && text ? h('div', { class: 'hint', style: 'margin-top:4px; max-height:7.5em; overflow:auto' }, text) : null)));
+                const side = (image, text) => h('div', { style: 'display:flex; gap:12px; align-items:flex-start; min-width:0' }, thumb(image, 96),
+                    h('div', { style: 'min-width:0; flex:1' }, h('b', { style: 'font-size:14px; overflow-wrap:anywhere' }, image.rel),
+                        byCaption && text ? h('div', { class: 'hint', style: 'margin-top:4px; max-height:7.5em; overflow:auto' }, text) : null));
                 const line = h('div', { style: 'padding:10px 0; border-bottom:1px solid var(--input-border)' },
                     h('div', { class: 'spread', style: 'margin-bottom:6px' },
                         h('div', { class: 'chips' },
@@ -175,7 +175,7 @@
                                 await api('/api/similar/fine', 'PUT', { a: pair.a.id, b: pair.b.id });
                                 alike.pairs = alike.pairs.filter((p) => p !== pair); alike.dismissed += 1; fill();
                             }) }, 'These are fine')),
-                    h('div', { class: 'row', style: 'align-items:flex-start; gap:16px' }, side(pair.a, pair.captions && pair.captions[0]), side(pair.b, pair.captions && pair.captions[1])));
+                    h('div', { class: 'grid2' }, side(pair.a, pair.captions && pair.captions[0]), side(pair.b, pair.captions && pair.captions[1])));
                 return line;
             };
             list.replaceChildren(
@@ -220,7 +220,7 @@
                         r.match < 0.5 ? 'The check caught it.' : 'The check did not catch it, so do not rely on the model\'s ranking for this kind of difference.')
                     : h('p', { class: 'hint' }, 'Taste the whole batch first to test the model\'s part.'),
                 h('p', null, h('b', null, `By the pixels: place ${r.pixel_rank} of ${r.count + 1}`), r.pixels.reasons.length ? ` (${r.pixels.reasons.join(', ')}).` : ' (palette, light and texture like the rest).'),
-                r.macro.length ? h('p', null, h('b', null, 'Source quality: '), r.macro.map((f) => f.detail).join('; '), '.') : null));
+                r.macro.length ? h('p', null, h('b', null, 'Quality Control (source quality): '), r.macro.map((f) => f.detail).join('; '), '.') : null));
         };
         show();
         return h('div', { class: 'card' },

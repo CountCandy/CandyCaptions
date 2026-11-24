@@ -75,7 +75,7 @@ function renderRecipe(container) {
                         h('input', { type: 'text', value: settings.trigger, placeholder: prefill.id === 'style' ? 'optional' : 'names the character or concept', oninput: (e) => patchDataset({ trigger: e.target.value }) }))),
                 h('p', { class: 'hint', style: 'margin:-4px 0 10px' }, prefill.summary),
                 h('div', { class: 'field' }, h('label', null, 'Extra instructions for this dataset', h('span', { class: 'plain' }, 'one per line')),
-                    h('textarea', { rows: 4, value: settings.extra_instructions, placeholder: 'The character\'s trigger is kyarine.', oninput: (e) => patchDataset({ extra_instructions: e.target.value }) })),
+                    h('textarea', { rows: 7, value: settings.extra_instructions, placeholder: 'The character\'s trigger is kyarine.', oninput: (e) => patchDataset({ extra_instructions: e.target.value }) })),
                 h('p', { class: 'hint' }, 'Options switched on: ', onToggles.length ? onToggles.join(' · ') : 'none', '. ',
                     h('a', { href: '#', onclick: (e) => { e.preventDefault(); showTab('prefills'); } }, 'Edit in the Recipe Box'))),
             h('div', null,

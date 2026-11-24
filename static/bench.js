@@ -97,11 +97,13 @@
             h('div', { class: 'spread' },
                 h('h2', null, candy('Sampler Box', 'test set')),
                 h('button', { class: 'quiet small', onclick: pinPicker }, bench.pins.length ? 'Change the pins' : 'Pin some images')),
-            bench.pins.length ? null : h('p', { class: 'hint', style: 'margin-top:8px' }, 'Pin 5 to 10 hard images. Then write a few facts for each once, and every recipe version is scored on them.'),
-            bench.pins.map((pin) => h('div', { class: 'pinned' },
+            h('p', { class: 'hint', style: 'margin:6px 0 4px' }, bench.pins.length
+                ? 'Two boxes per image, and they do opposite jobs. The Hint is told to the model as fact. Tasting Notes are the answer key: the model never sees them, and each test batch is scored on how many it got right.'
+                : 'Pin 5 to 10 hard images. Then write a few facts for each once, and every recipe version is scored on them.'),
+            h('div', { class: 'pins-grid' }, bench.pins.map((pin) => h('div', { class: 'pinned' },
                 h('img', { src: thumbUrl(pin.id), loading: 'lazy', style: 'cursor:zoom-in', title: 'Click to see the image at full size', onclick: () => viewImage(pin.id, pin.rel) }),
                 h('div', null,
-                    h('div', { class: 'spread' }, h('b', { style: 'font-size:12.5px' }, pin.rel),
+                    h('div', { class: 'spread' }, h('b', { style: 'font-size:13.5px' }, pin.rel),
                         h('span', null, h('button', { class: 'quiet small', onclick: () => showRequest(pin) }, 'Show request'))),
                     hintBox(pin.id, pin.note, (saved) => { pin.note = saved; }, { style: 'margin-top:6px' }),
                     pin.facts.length && !pin.note ? h('button', {
@@ -116,10 +118,10 @@
                     h('textarea', {
                         rows: 3, placeholder: 'two people\nred scarf\nnight', value: pin.facts.join('\n'),
                         onchange: (e) => act(null, async () => { bench = await api('/api/test/facts', 'PUT', { id: pin.id, facts: e.target.value.split('\n') }); }),
-                    })))));
+                    }))))));
 
         const runCard = h('div', { class: 'card' },
-            h('h2', null, 'Run the test'),
+            h('h2', null, candy('Take a Bite', 'run the test')),
             h('p', { class: 'hint', style: 'margin:4px 0 10px' }, 'One image at a time with the fixed seed. Nothing is written to the dataset folder.'),
             h('div', { class: 'row' }, label,
                 h('button', {
@@ -153,7 +155,7 @@
 
         const runs = h('div', { class: 'card' },
             h('div', { class: 'spread' },
-                h('h2', null, 'Versions tried', h('span', { class: 'plain' }, 'the newest 8 are kept')),
+                h('h2', null, candy('Test Batches', 'versions tried; the newest 8 are kept')),
                 bench.runs.length ? h('button', {
                     class: 'quiet small', onclick: (e) => act(e.target, async () => {
                         if (!confirm('Clear every version tried for this dataset? Nothing in the dataset folder changes.')) return;
@@ -190,12 +192,12 @@
                             render();
                         }),
                     }, '✕')))))
-                : h('p', { class: 'hint', style: 'margin-top:8px' }, 'No test runs yet.'));
+                : h('p', { class: 'hint', style: 'margin-top:8px' }, 'No test batches yet. Each run is kept here so you can put two side by side and promote the better one to be this dataset\'s recipe.'));
 
         const compareSlot = h('div');
         panel.replaceChildren(
             h('div', { class: 'card' }, h('h2', { style: 'margin-bottom:12px' }, candy('This dataset\'s recipe', 'run settings, shared with the Candy Factory tab')), recipe),
-            h('div', { class: 'grid2' }, pins, h('div', null, runCard, runs)), compareSlot);
+            pins, h('div', { class: 'grid2 wide-right' }, runCard, runs), compareSlot);
         showProgress();
         try {
             const view = await comparison();

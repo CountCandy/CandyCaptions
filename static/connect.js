@@ -52,6 +52,7 @@
             h('div', { class: 'grid2' },
                 h('div', { class: 'field' }, h('label', null, candy('Captioner', 'the model that describes each image')), modelSelect('model', 'choose a model…')),
                 h('div', { class: 'field' }, h('label', null, candy('Taste Tester', 'verifier model for field checks')), modelSelect('verifier_model', 'same as the captioner'))),
+            h('p', { class: 'hint', style: 'margin:-4px 0 12px' }, 'The Taste Tester re-checks doubtful fields with short yes or no questions. A second model gives a real second opinion; left on "same as the captioner", the captioner checks its own work.'),
             h('div', { class: 'row' },
                 h('button', { class: 'quiet', onclick: (e) => loadModels(e.target) }, 'Load model list'),
                 h('button', {
@@ -70,7 +71,7 @@
             profile.notes ? h('p', { class: 'hint', style: 'margin-top:12px' }, profile.notes) : null);
 
         const honors = h('div', { class: 'card' },
-            h('h2', null, 'What this server honors'),
+            h('h2', null, candy('What\'s in Stock', 'the settings this server honors')),
             h('p', { class: 'hint', style: 'margin-bottom:10px' }, 'A setting the backend ignores is grayed out here and in the sampling controls, and is never sent.'),
             h('div', { class: 'chips' }, SAMPLING.map((name) => {
                 const yes = (profile.sampling || []).includes(name) && (name !== 'thinking' || profile.thinking);
@@ -87,7 +88,7 @@
             tokenizerStatus.replaceChildren(h('span', { class: 'chip ' + (t.exact ? 'good' : 'health') }, t.exact ? '✓ exact' : '≈ approximate'), ' ', t.source);
         }).catch(() => {});
         const tokenizer = h('div', { class: 'card' },
-            h('h2', null, candy('Token counter', 'checks captions against the trainer\'s limit')),
+            h('h2', null, candy('Wrapper Size', 'token counter: does each caption fit the trainer\'s limit')),
             h('div', { class: 'field' }, h('label', null, 'Local tokenizer folder', h('span', { class: 'plain' }, 'optional, works offline')),
                 h('input', { type: 'text', value: s.tokenizer_path, placeholder: 'for example the tokenizer folder BluFlow bundles', onchange: (e) => act(null, () => save({ tokenizer_path: e.target.value.trim() }).then(render)) })),
             h('div', { class: 'grid2' },
@@ -95,14 +96,15 @@
                     h('input', { type: 'text', value: s.tokenizer_repo, onchange: (e) => act(null, () => save({ tokenizer_repo: e.target.value.trim() }).then(render)) })),
                 h('div', { class: 'field' }, h('label', null, 'Token limit', h('span', { class: 'plain' }, 'BluFlow default 512')),
                     h('input', { type: 'number', min: 32, max: 4096, value: s.token_limit, onchange: (e) => act(null, () => save({ token_limit: Number(e.target.value) || 512 })) }))),
-            h('p', null, 'Now using: ', tokenizerStatus));
+            h('p', null, 'Now using: ', tokenizerStatus),
+            h('p', { class: 'hint', style: 'margin-top:6px' }, 'The limit is the trainer\'s setting, not the model\'s. An approximate count is close enough to warn you; an exact one needs the tokenizer files, which are small and are not the model.'));
 
         const w = s.score_weights;
         const weight = (key, label) => h('div', { class: 'field' }, h('label', null, candy(FLAGS[key].candy, label)),
             h('input', { type: 'number', step: 0.05, min: 0, max: 1, value: w[key], onchange: (e) => act(null, () => save({ score_weights: { ...App.settings.score_weights, [key]: Number(e.target.value) } })) }));
         const advanced = h('details', { class: 'card' },
-            h('summary', null, 'Review score weights and thresholds'),
-            h('p', { class: 'hint', style: 'margin-bottom:10px' }, 'The review queue sorts by a weighted sum of the four signals. These are starting points to tune on real datasets.'),
+            h('summary', null, 'Scoring: how the Sorting Table decides which captions to show first'),
+            h('p', { class: 'hint', style: 'margin-bottom:10px' }, 'Each caption gets a doubt score: the four signals below, each multiplied by its weight and added up. A higher weight pushes captions with that problem further up the Sorting Table. The two thresholds set how easily a word or a field gets flagged at all. The defaults are starting points; change them only if the table keeps showing you the wrong things.'),
             h('div', { class: 'grid4' }, weight('uncertain', 'uncertain words'), weight('checks', 'field checks'), weight('tags', 'tag contradictions'), weight('template', 'template repetition')),
             h('div', { class: 'grid2' },
                 h('div', { class: 'field' }, h('label', null, 'Flag a word when an alternative reaches', h('span', { class: 'plain' }, 'probability')),
@@ -112,7 +114,7 @@
 
         const level = h('output', null, `${Math.round(soundVolume() * 100)}%`);
         const sounds = h('div', { class: 'card' },
-            h('h2', null, candy('Finish sound', 'gumdrops when a taste test or a batch finishes')),
+            h('h2', null, candy('Gumdrop Bell', 'a sound when a taste test or a batch finishes')),
             h('label', { class: 'check', style: 'margin-top:10px' },
                 h('input', { type: 'checkbox', checked: soundOn(), onchange: (e) => setSound(e.target.checked) }), 'Play the sound'),
             h('div', { class: 'slider-row' + (soundOn() ? '' : ' grayed'), style: 'grid-template-columns: 70px 1fr 48px auto' },

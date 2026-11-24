@@ -116,6 +116,13 @@ def _best_crop(big: np.ndarray, small: np.ndarray, window: tuple[float, float, f
     return best
 
 
+def _plainness(grid: np.ndarray) -> float:
+    """How much to distrust a crop match: a picture of a few flat shapes fits a window of almost anything."""
+    z = _zscore(_AVERAGERS[0] @ grid @ _AVERAGERS[0].T)
+    detail = float(np.abs(np.diff(z, axis=0)).mean() + np.abs(np.diff(z, axis=1)).mean())
+    return max(0.0, 0.6 - detail) * 0.5
+
+
 def picture_pairs(grids: list[np.ndarray], floor: float = PICTURE_FLOOR) -> dict[tuple[int, int], tuple[float, str]]:
     """Every pair of pictures at least `floor` alike, as {(a, b): (score, kind)} with a < b."""
     count = len(grids)
@@ -167,7 +174,8 @@ def picture_pairs(grids: list[np.ndarray], floor: float = PICTURE_FLOOR) -> dict
             continue
         (y0, y1), (x0, x1) = shapes[shape]
         # Picking the best of many windows flatters a pair a little, so a crop has to clear the bar with room.
-        keep(a, b, _best_crop(grids[a], whole[b], (float(y0), float(y1), float(x0), float(x1))) - 0.02, "crop")
+        doubt = 0.02 + max(_plainness(grids[a]), _plainness(grids[b]))
+        keep(a, b, _best_crop(grids[a], whole[b], (float(y0), float(y1), float(x0), float(x1))) - doubt, "crop")
     return found
 
 
@@ -218,13 +226,17 @@ def caption_pairs(texts: list[str], floor: float = CAPTION_FLOOR) -> dict[tuple[
     return found
 
 
-def _key(a: int, b: int) -> str:
-    return f"{min(a, b)}-{max(a, b)}"
+def _key(a: dict[str, Any], b: dict[str, Any]) -> str:
+    """Names the two pictures by content, so a pair marked as fine is asked about again if either is replaced."""
+    return "-".join(sorted([a.get("sha") or f"id{a['id']}", b.get("sha") or f"id{b['id']}"]))
 
 
 def dismiss(project: Project, a: int, b: int) -> None:
+    first, second = project.store.image(a), project.store.image(b)
+    if not first or not second:
+        return
     fine = set(project.store.get_meta("similar_ok") or [])
-    fine.add(_key(a, b))
+    fine.add(_key(first, second))
     project.store.set_meta("similar_ok", sorted(fine))
 
 
@@ -259,7 +271,7 @@ def find(project: Project) -> dict[str, Any]:
     fine = set(project.store.get_meta("similar_ok") or [])
     pairs = []
     for a, b in sorted(set(pictures) | set(captions)):
-        if _key(images[a]["id"], images[b]["id"]) in fine:
+        if _key(images[a], images[b]) in fine:
             continue
         score, kind = pictures.get((a, b), (None, None))
         words = captions.get((a, b))

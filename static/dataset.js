@@ -63,7 +63,7 @@
         const d = App.dataset;
         const input = h('input', { type: 'text', class: 'grow', placeholder: 'C:\\datasets\\my_lora\\images', value: d.open ? d.folder : '', onkeydown: (e) => { if (e.key === 'Enter') openFolder(input.value); } });
         return h('div', { class: 'card' },
-            h('h2', null, candy('Dataset folder', 'images, with their tag files next to them')),
+            h('h2', null, candy('The Jar', 'dataset folder: images, with their tag files next to them')),
             h('div', { class: 'row', style: 'margin-top:10px' }, input,
                 h('button', { class: 'quiet', onclick: () => browse(input) }, 'Browse…'),
                 h('button', { onclick: (e) => openFolder(input.value, e.target) }, d.open ? 'Open' : 'Open folder')),

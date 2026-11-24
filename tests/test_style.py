@@ -275,6 +275,20 @@ def test_look_alikes_are_found_whatever_was_done_to_the_copy(styled):
     assert not [pair for pair in pairs if names[pair[0]].startswith("ta") and names[pair[1]].startswith("ta")]
 
 
+def test_a_plain_picture_is_not_called_a_crop_of_everything(tmp_path):
+    plain = Image.new("RGB", (600, 600), (0, 140, 130))
+    ImageDraw.Draw(plain).ellipse([-80, -120, 260, 220], fill=(210, 140, 130))
+    plain.save(tmp_path / "plain.png")
+    busy = Image.new("RGB", (900, 900), (170, 30, 50))
+    draw = ImageDraw.Draw(busy)
+    draw.rectangle([300, 320, 560, 560], fill=(110, 250, 60))
+    draw.ellipse([640, 700, 900, 960], fill=(170, 220, 220))
+    draw.rectangle([0, 700, 180, 900], fill=(90, 70, 30))
+    busy.save(tmp_path / "busy.png")
+    pairs = picture_pairs([decode(measure(tmp_path / name)["sig"]) for name in ("busy.png", "plain.png")])
+    assert all(score < 0.9 for score, _ in pairs.values())
+
+
 def test_caption_pairs_ignore_the_words_every_caption_shares():
     opening = "A digital painting in a soft watercolor style. "
     texts = [
@@ -312,3 +326,48 @@ async def test_similar_lists_pairs_and_lets_one_be_marked_fine(api, styled):
     assert len(after["pairs"]) == 1 and after["dismissed"] == 1
     again = (await api.request("DELETE", "/api/similar/fine")).json()
     assert len(again["pairs"]) == 2 and again["dismissed"] == 0
+
+
+async def test_flavor_profile_survives_files_changing_underneath_it(api, styled, tmp_path, mock_url):
+    first = Image.open(styled / "ta (1).png")
+    first.resize((450, 450)).save(styled / "small copy.png")
+    await api.post("/api/dataset/open", json={"path": str(styled)})
+    images = (await api.get("/api/dataset")).json()["images"]
+    by_name = {i["rel"]: i["id"] for i in images}
+    pair = (await api.get("/api/similar")).json()["pairs"][0]
+    await api.put("/api/similar/fine", json={"a": pair["a"]["id"], "b": pair["b"]["id"]})
+    assert (await api.get("/api/similar")).json()["pairs"] == []
+
+    # A different picture saved under the copy's name: the "fine" mark was about the old picture.
+    art(styled / "small copy.png", 400)
+    (await api.post("/api/dataset/rescan")).raise_for_status()
+    data = (await api.get("/api/similar")).json()
+    assert data["pairs"] == [] and data["images"] == 13
+
+    # Chosen and target images that then disappear from the folder are quietly dropped.
+    await api.put("/api/style/selection", json={"ids": [by_name[f"ta ({n}).png"] for n in range(1, 10)]})
+    await api.put("/api/style/targets", json={"ids": [by_name["ta (1).png"], by_name["ta (2).png"]]})
+    (styled / "ta (1).png").unlink()
+    (styled / "ta (9).png").unlink()
+    (await api.post("/api/dataset/rescan")).raise_for_status()
+    data = (await api.get("/api/style")).json()
+    assert data["count"] == 7 and [t["rel"] for t in data["targets"]] == ["ta (2).png"]
+    data = await run_style(api)
+    assert data["job"]["state"] == "done" and data["checked"] == 7
+    assert (await api.get("/api/similar")).status_code == 200
+
+
+async def test_flavor_profile_on_a_folder_too_small_to_compare(api, tmp_path):
+    folder = tmp_path / "tiny"
+    folder.mkdir()
+    await api.post("/api/dataset/open", json={"path": str(folder)})
+    assert (await api.get("/api/similar")).json()["pairs"] == []
+    assert (await api.get("/api/style")).json()["can_run"] is False
+    art(folder / "only.png", 1)
+    (folder / "broken.png").write_bytes(b"not an image")
+    (await api.post("/api/dataset/rescan")).raise_for_status()
+    data = (await api.get("/api/similar")).json()
+    assert data["pairs"] == [] and data["images"] == 1
+    style = (await api.get("/api/style")).json()
+    assert style["count"] == 1 and style["odd"] == [] and style["macro"] == []
+    assert (await api.post("/api/style/run", json={})).status_code == 409

@@ -176,7 +176,7 @@
             h('div', { class: 'spread' }, h('h2', null, candy('Sweet Talk', 'review chat')), h('button', { class: 'quiet small', onclick: () => close() }, 'Close')),
             h('div', { class: 'row', style: 'align-items:flex-start' },
                 h('img', { src: thumbUrl(image.id), style: 'width:96px; height:96px; object-fit:cover; border-radius:8px' }),
-                h('p', { class: 'grow', style: 'font-size:13px' }, image.caption)),
+                h('p', { class: 'grow', style: 'font-size:14px' }, image.caption)),
             h('p', { class: 'hint' }, 'Say what is wrong and the model does the rewriting. This conversation holds only this image, and closing it discards it.'),
             log,
             h('div', { class: 'chips' }, QUICK.filter(([label]) => label !== 'Mentions the style' || (image.snapshot && /style/i.test(image.snapshot.prefill)))
@@ -211,7 +211,7 @@
                         }),
                     }, 'Apply to the ticked ones')),
                 h('div', { style: 'max-height:420px; overflow:auto' }, changes.map((change, i) => h('div', { class: 'row', style: 'align-items:flex-start; padding:8px 0; border-bottom:1px solid var(--input-border)' },
-                    boxes[i], h('div', { class: 'grow' }, h('b', { style: 'font-size:12px' }, change.rel), h('div', { class: 'diff', style: 'margin-top:4px' }, wordDiff(change.before, change.after)))))));
+                    boxes[i], h('div', { class: 'grow' }, h('b', { style: 'font-size:13px' }, change.rel), h('div', { class: 'diff', style: 'margin-top:4px' }, wordDiff(change.before, change.after)))))));
         };
 
         overlay(h('div', { class: 'modal' },
@@ -233,7 +233,7 @@
         if (!list) return;
         $('#reviewTotals').textContent = `${rows.length} shown · ${totals.reviewed} of ${totals.done} approved · ${totals.flagged} flagged to go`;
         if (!rows.length) {
-            list.replaceChildren(h('div', { class: 'empty', style: 'padding:30px 14px; font-size:13.5px' },
+            list.replaceChildren(h('div', { class: 'empty', style: 'padding:30px 14px; font-size:14.5px' },
                 totals.done ? (query ? 'No caption matches this filter.' : 'The table is clear. Every caption here is approved.') : 'No captions yet. Run a batch in the Candy Factory tab.'));
             return;
         }
@@ -291,7 +291,7 @@
             d.history.map((entry) => h('div', { style: 'padding:8px 0; border-bottom:1px solid var(--input-border)' },
                 h('div', { class: 'spread' }, h('span', { class: 'hint' }, `${entry.kind} · ${entry.reason} · ${new Date(entry.created * 1000).toLocaleString()}`),
                     entry.kind === 'caption' || entry.kind === 'tags' ? h('button', { class: 'quiet small', onclick: () => act(null, () => saveText(entry.kind, entry.old)) }, 'Restore') : null),
-                h('div', { style: 'font-size:12.5px; margin-top:4px; word-break:break-word' }, entry.old)))) : null;
+                h('div', { style: 'font-size:13.5px; margin-top:4px; word-break:break-word' }, entry.old)))) : null;
 
         slot.replaceChildren(h('div', { class: 'card' },
             h('div', { class: 'spread', style: 'margin-bottom:12px' },
@@ -311,7 +311,7 @@
                     caption,
                     h('div', { class: 'row', style: 'margin:10px 0 14px' },
                         h('button', { onclick: (e) => act(e.target, approve) }, d.reviewed ? 'Put back in the queue' : 'Approve'),
-                        h('button', { class: 'quiet', onclick: openChat }, candy('Sweet Talk', 'review chat'))),
+                        h('button', { class: 'quiet', onclick: openChat, disabled: !d.fields, title: d.fields ? 'Tell the model what is wrong and let it rewrite the caption' : 'Sweet Talk works from the fields the model filled in, and this caption has none. Regenerate it first.' }, candy('Sweet Talk', 'review chat'))),
                     h('label', null, 'Tags', h('span', { class: 'plain' }, d.rel.replace(/\.[^.]+$/, '') + '.txt')),
                     h('textarea', { rows: 3, value: d.tags, onchange: (e) => act(null, () => saveText('tags', e.target.value)) }),
                     h('div', { class: 'row', style: 'align-items:flex-end; margin-top:12px' }, hint,

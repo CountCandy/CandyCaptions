@@ -241,8 +241,21 @@ function hintBox(id, value, onsave, attrs = {}) {
 }
 
 // --- Tabs ---
+// What each tab is for, in one line, shown under the tab bar.
+const TAB_INTROS = {
+    connect: ['Step 1.', ' Point the app at your model server and pick the models. Images only ever go to the server you name here.'],
+    prefills: ['Step 2.', ' A recipe is the instructions and the list of fields the model follows. The built-in ones work as they are; change one when captions keep going wrong in the same way.'],
+    dataset: ['Step 3.', ' Open your folder of images. Fix what the Freshness Check finds, and give a hint to any image the model is likely to misread.'],
+    bench: ['Step 4.', ' Try the recipe on a few pinned images before spending time on the whole folder. Nothing on this tab is written to your dataset.'],
+    run: ['Step 5.', ' Caption the whole folder. Each caption is saved next to its image the moment it is written, so pausing or stopping loses nothing.'],
+    review: ['Step 6.', ' The captions most likely to be wrong, each with the reason. All caption editing happens here.'],
+    style: ['Extra, for style datasets.', ' Find the images that do not belong with the rest, and the images or captions that are too alike.'],
+};
+
 function showTab(name) {
     App.tab = name;
+    const intro = TAB_INTROS[name];
+    $('#tabIntro').replaceChildren(...(intro ? [h('b', null, intro[0]), intro[1]] : []));
     $$('.tab').forEach((tab) => tab.classList.toggle('active', tab.dataset.tab === name));
     $$('.panel').forEach((panel) => panel.classList.toggle('active', panel.id === `panel-${name}`));
     localStorage.setItem('tab', name);
@@ -269,14 +282,15 @@ function refreshHeader() {
     if (d.open) $('#datasetPill').title = d.folder;
 }
 
-// --- Themes (cycles candy → dark → light) ---
-const THEMES = ['candy', 'dark', 'light'];
-const THEME_ICONS = { dark: '🌙', light: '☀️', candy: '🍬' };
+// --- Themes (candy is the default; the button switches to midnight and back) ---
+const THEMES = ['candy', 'dark'];
+const THEME_ICONS = { dark: '🌙', candy: '🍬' };
+const THEME_NAMES = { dark: 'Midnight (blue)', candy: 'Candy (plum)' };
 function setTheme(theme) {
     if (!THEMES.includes(theme)) theme = 'candy';
     document.documentElement.setAttribute('data-theme', theme);
     $('#themeToggle').textContent = THEME_ICONS[theme];
-    $('#themeToggle').title = `Theme: ${theme} — click to switch`;
+    $('#themeToggle').title = `Theme: ${THEME_NAMES[theme]}. Click to switch.`;
     localStorage.setItem('theme', theme);
 }
 

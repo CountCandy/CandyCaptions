@@ -234,20 +234,21 @@ src/candycaption/
 static/             the page: plain HTML, CSS and JS, no build step
 ```
 
-The look comes from [Candy Echo](https://github.com/CountCandy/candyecho): its three themes, frosted
-panels and rock-candy progress bar.
+The look started from [Candy Echo](https://github.com/CountCandy/candyecho): its frosted panels and
+rock-candy progress bar. There are two themes, both dark: Candy (plum, the default) and Midnight (blue).
+The button in the top right corner switches between them.
 
 ## Flavor Profile: the odd one out
 
 For style datasets. Everything is relative to the folder you opened, and the result is a ranked shortlist
 for your eye, not a verdict. A set needs at least 8 images.
 
-- **Source quality** needs no model. It measures sharpness, resolution, JPEG block pattern and grain, and
+- **Quality Control** (source quality) needs no model. It measures sharpness, resolution, JPEG block pattern and grain, and
   flags an image only when it stands apart from the rest. Compression the whole set shares is not flagged.
 - **Odd One Out** uses the model: a short style note per image, one style summed up for the set, then one
   yes or no question per image, "is this made in that style?". Palette, light and texture measured from the
   pixels give a second opinion. **How does it differ?** shows a flagged image next to three typical ones.
-- **Images to check** limits everything on the tab to the images you choose.
+- **Pick and Mix** (images to check) limits the checks above to the images you choose.
 - **Gold Standard** lets you mark a few images as exactly the style you are aiming for. The style is then
   written from those alone and every image is checked against it, instead of against what most of the set
   shares. Use it when a set mixes two styles or when most of the set is not what you want.

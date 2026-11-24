@@ -27,11 +27,14 @@
         });
     }
 
+    let flavorSwap = null;
     function setFlavor(message) {
         const el = $('#runFlavor');
         if (!el || el.textContent === message) return;
         el.classList.add('swap');
-        setTimeout(() => { el.textContent = message; el.classList.remove('swap'); }, 300);
+        // The batch can finish during the fade. The finished line must not be replaced by a late flavor line.
+        clearTimeout(flavorSwap);
+        flavorSwap = setTimeout(() => { el.classList.remove('swap'); if (status().state === 'running') el.textContent = message; }, 300);
     }
 
     function rotateFlavor() {
@@ -100,7 +103,7 @@
         $('#runReveal').style.width = `${Math.min(100, percent)}%`;
         $('#runPercent').textContent = s.total ? `${finished} of ${s.total}` : '';
         const idleLine = s.message || (App.dataset.images.length ? `${App.dataset.images.length} images in the jar, ready when you are.` : 'This folder has no images in it.');
-        if (s.state !== 'running') $('#runFlavor').textContent = idleLine;
+        if (s.state !== 'running') { clearTimeout(flavorSwap); $('#runFlavor').classList.remove('swap'); $('#runFlavor').textContent = idleLine; }
         if (s.state === 'running' && !flavorTimer) { flavorIdx = -1; rotateFlavor(); flavorTimer = setInterval(rotateFlavor, 2600); }
         if (s.state !== 'running' && flavorTimer) { clearInterval(flavorTimer); flavorTimer = null; }
 
@@ -154,7 +157,7 @@
                 legend,
                 s.recent.map((item) => h('div', { class: 'recent-item', title: 'Open in the Sorting Table (review)', onclick: () => App.tabs.review.open(item.id) },
                     h('img', { src: thumbUrl(item.id) }),
-                    h('div', { style: 'min-width:0; flex:1' }, h('div', { class: 'spread' }, h('b', { style: 'font-size:12.5px' }, item.rel),
+                    h('div', { style: 'min-width:0; flex:1' }, h('div', { class: 'spread' }, h('b', { style: 'font-size:13.5px' }, item.rel),
                         h('span', { class: 'chips' }, item.flags.length ? item.flags.map((f) => flagChip(f, false)) : h('span', { class: 'chip good', title: 'None of the four signals flagged this caption' }, '✓ no flags'))), h('p', null, item.caption))))) : null);
     }
 
