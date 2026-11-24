@@ -64,7 +64,9 @@ COMMON_RULES = [
 
 COMPOSE_PROMPT = (
     "Turn the notes into one paragraph that describes the image, {min_words} to {max_words} words long. "
-    "Follow the order of the notes. Use plain declarative sentences. Use only what the notes state; "
+    "Follow the order of the notes. Use plain declarative sentences. Use only what the notes state, and keep "
+    "their concrete details (colours, counts, objects, expressions, what is where); when space is short, cut "
+    "filler words before you cut a fact. "
     "skip any note that says \"none\". Do not mention notes, fields or tags. Reply with the paragraph only."
 )
 

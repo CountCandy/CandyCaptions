@@ -284,6 +284,21 @@
             history));
     }
 
+    function applyFilter(text) {
+        return act(null, async () => {
+            const before = query;
+            query = text;
+            try {
+                await loadList();
+            } catch (err) {
+                query = before;   // a filter with a mistake in it leaves the queue as it was
+                throw err;
+            }
+            render();
+            await select(rows.some((r) => r.id === currentId) ? currentId : (rows.length ? rows[0].id : null));
+        });
+    }
+
     function render() {
         if (needsDataset(panel)) return;
         const help = h('div', { class: 'notice hint', hidden: true, style: 'margin-bottom:10px' },
@@ -294,7 +309,7 @@
             '. A bare word searches the caption.');
         const search = h('input', {
             type: 'search', value: query, placeholder: 'Filter, such as signal:tags AND NOT field:clothing',
-            onkeydown: (e) => { if (e.key === 'Enter') act(null, async () => { query = e.target.value; await loadList(); await select(rows.length ? rows[0].id : null); }); },
+            onkeydown: (e) => { if (e.key === 'Enter') applyFilter(e.target.value); },
         });
         panel.replaceChildren(h('div', { class: 'review' },
             h('div', null,
@@ -302,12 +317,20 @@
                     h('button', { class: 'quiet small', title: 'Reload the queue from the dataset folder', onclick: (e) => act(e.target, async () => { await loadList(); await select(rows.some((r) => r.id === currentId) ? currentId : (rows.length ? rows[0].id : null)); }) }, '↻ Refresh'),
                     h('button', { class: 'quiet small', title: 'How filters work', onclick: () => { help.hidden = !help.hidden; } }, '?')),
                 help,
-                h('div', { class: 'chips', style: 'margin-bottom:8px' }, Object.keys(FLAGS).map((signal) => {
-                    const chip = flagChip(signal, false);
-                    chip.classList.add('clickable');
-                    chip.onclick = () => act(null, async () => { query = `signal:${signal}`; search.value = query; await loadList(); await select(rows.length ? rows[0].id : null); });
-                    return chip;
-                })),
+                h('div', { class: 'chips', style: 'margin-bottom:8px' },
+                    (() => {
+                        const all = h('span', { class: 'chip neutral clickable' + (query.trim() ? '' : ' selected'), title: 'Clear the filter and show the whole queue' }, 'All');
+                        all.onclick = () => applyFilter('');
+                        return all;
+                    })(),
+                    Object.keys(FLAGS).map((signal) => {
+                        const chip = flagChip(signal, false);
+                        chip.classList.add('clickable');
+                        if (query.trim() === `signal:${signal}`) chip.classList.add('selected');
+                        // Clicking the chip that is already on turns it off again.
+                        chip.onclick = () => applyFilter(query.trim() === `signal:${signal}` ? '' : `signal:${signal}`);
+                        return chip;
+                    })),
                 h('p', { class: 'hint', id: 'reviewTotals', style: 'margin-bottom:8px' }),
                 h('div', { class: 'queue', id: 'reviewQueue' })),
             h('div', { id: 'reviewDetail' })));
