@@ -186,6 +186,47 @@
         setTimeout(() => input.focus(), 50);
     }
 
+    // Swap the Sprinkles: find and replace across every description, with a preview first.
+    function replaceModal() {
+        let changes = null;
+        const find = h('input', { type: 'text', placeholder: 'Find', class: 'grow' });
+        const replace = h('input', { type: 'text', placeholder: 'Replace with (empty removes it)', class: 'grow' });
+        const options = { case: h('input', { type: 'checkbox' }), whole: h('input', { type: 'checkbox' }), regex: h('input', { type: 'checkbox' }) };
+        const query = () => ({ find: find.value, replace: replace.value, case: options.case.checked, whole: options.whole.checked, regex: options.regex.checked });
+        const results = h('div', { style: 'margin-top:12px' });
+        let last = null;
+
+        const showChanges = () => {
+            if (!changes) { results.replaceChildren(); return; }
+            if (!changes.length) { results.replaceChildren(h('p', { class: 'hint' }, 'No description contains that.')); return; }
+            const boxes = changes.map(() => h('input', { type: 'checkbox', checked: true }));
+            results.replaceChildren(
+                h('div', { class: 'spread', style: 'margin-bottom:8px' }, h('b', null, `${changes.length} descriptions would change`),
+                    h('button', {
+                        onclick: (e) => act(e.target, async () => {
+                            const ids = changes.filter((c, i) => boxes[i].checked).map((c) => c.id);
+                            const result = await api('/api/replace/apply', 'POST', { ...last, ids });
+                            toast(`${result.changed} descriptions changed. The old versions are in each image's history.`);
+                            changes = null; showChanges();
+                        }),
+                    }, 'Apply to the ticked ones')),
+                h('div', { style: 'max-height:420px; overflow:auto' }, changes.map((change, i) => h('div', { class: 'row', style: 'align-items:flex-start; padding:8px 0; border-bottom:1px solid var(--input-border)' },
+                    boxes[i], h('div', { class: 'grow' }, h('b', { style: 'font-size:12px' }, change.rel), h('div', { class: 'diff', style: 'margin-top:4px' }, wordDiff(change.before, change.after)))))));
+        };
+
+        overlay(h('div', { class: 'modal' },
+            h('h2', null, candy('Swap the Sprinkles', 'find and replace across every description')),
+            h('div', { class: 'row', style: 'margin-top:10px' }, find, replace,
+                h('button', { class: 'quiet', onclick: (e) => act(e.target, async () => { last = query(); changes = (await api('/api/replace/preview', 'POST', last)).changes; showChanges(); }) }, 'Preview changes')),
+            h('div', { class: 'row', style: 'margin-top:8px' },
+                h('label', { class: 'check', style: 'margin:0' }, options.case, 'Match case'),
+                h('label', { class: 'check', style: 'margin:0' }, options.whole, 'Whole words only'),
+                h('label', { class: 'check', style: 'margin:0' }, options.regex, 'Regular expression')),
+            results), { center: true, onclose: () => act(null, async () => { await loadList(); await select(rows.some((r) => r.id === currentId) ? currentId : (rows.length ? rows[0].id : null)); }) });
+        setTimeout(() => find.focus(), 50);
+    }
+
+
     // --- Rendering ---
     function renderList() {
         const list = $('#reviewQueue');
@@ -281,7 +322,8 @@
                             }),
                         }, 'Regenerate')))),
             d.fields ? [h('h3', { style: 'margin-top:18px' }, 'Fields', h('span', { class: 'plain' }, 'editing one rewrites the description')), fields] : null,
-            d.snapshot ? h('p', { class: 'hint', style: 'margin-top:10px' }, `Made with the ${d.snapshot.prefill} recipe, ${d.snapshot.model}, ${d.snapshot.preset} preset.`) : null,
+            d.snapshot ? h('p', { class: 'hint', style: 'margin-top:10px' }, `Made with the ${d.snapshot.prefill} recipe and ${d.snapshot.preset} preset. Captioner: ${d.snapshot.model}`,
+                d.snapshot.verifier_model && d.snapshot.verifier_model !== d.snapshot.model ? ` · Taste Tester: ${d.snapshot.verifier_model}` : '', '.') : null,
             history));
     }
 
@@ -341,6 +383,7 @@
                             act(null, async () => { await loadList(); renderList(); const active = $('.queue-item.active', panel); if (active) active.scrollIntoView({ block: 'nearest' }); });
                         },
                     }, [['name', 'By file name'], ['score', 'Most doubtful first']].map(([value, label]) => h('option', { value, selected: sortBy === value }, label)))),
+                h('button', { class: 'quiet small', style: 'width:100%; margin-bottom:8px', onclick: replaceModal }, candy('Swap the Sprinkles', 'find and replace across every description')),
                 flagLegend(),
                 h('p', { class: 'hint', id: 'reviewTotals', style: 'margin:8px 0' }),
                 h('div', { class: 'queue', id: 'reviewQueue' })),

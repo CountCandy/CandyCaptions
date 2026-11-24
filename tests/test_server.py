@@ -301,3 +301,18 @@ async def test_the_page_always_loads_its_current_scripts(api):
     assert script.headers["cache-control"] == "no-cache" and "hintBox" in script.text
     # Pantry comes before Taste Test, left to right.
     assert page.text.index('data-tab="dataset"') < page.text.index('data-tab="bench"')
+
+
+async def test_versions_tried_are_capped_at_eight_name_their_model_and_can_be_cleared(api, dataset):
+    images = (await api.get("/api/dataset")).json()["images"]
+    await api.post("/api/test/pin", json={"id": images[0]["id"], "pinned": True})
+    for n in range(10):
+        data = (await api.post("/api/test/run", json={"label": f"v{n}"})).json()
+    assert [r["label"] for r in data["runs"]] == [f"v{n}" for n in range(9, 1, -1)]          # the newest eight
+    assert data["runs"][0]["model"] == "mock-captioner" and data["runs"][0]["verifier_model"] == "mock-captioner"
+    after = (await api.delete(f"/api/test/run/{data['runs'][0]['id']}")).json()
+    assert len(after["runs"]) == 7 and after["runs"][0]["label"] == "v8"
+    assert (await api.delete("/api/test/runs")).json()["runs"] == []
+
+    status = await run_batch(api)
+    assert status["model"] == "mock-captioner" and status["verifier_model"] == "mock-captioner"

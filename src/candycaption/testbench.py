@@ -60,6 +60,7 @@ def summarize(run: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": run["id"], "label": run["label"], "created": run["created"],
         "prefill": run["snapshot"]["prefill"]["name"], "preset": run["snapshot"].get("preset"),
+        "model": run["snapshot"].get("model"), "verifier_model": run["snapshot"].get("verifier_model"),
         "images": len(run["results"]), "failed": sum(1 for r in run["results"] if r.get("error")),
         "facts": len(verdicts), "captured": verdicts.count("captured"), "wrong": verdicts.count("wrong"),
         "flagged": sum(1 for r in run["results"] if r.get("reasons")),

@@ -5,13 +5,13 @@
     let filter = null;     // health check key, or null for everything
     let shown = 240;
     let order = localStorage.getItem('pantryOrder') || 'az';
-    let changes = null;    // find-and-replace preview
+    let view = localStorage.getItem('pantryView') === 'grid' ? 'grid' : 'list';
 
     async function openFolder(path, button) {
         await act(button, async () => {
             if (button) button.textContent = 'Checking every image…';
             App.dataset = await api('/api/dataset/open', 'POST', { path });
-            filter = null; changes = null; shown = 240;
+            filter = null; shown = 240;
             if (App.tabs.bench.reset) App.tabs.bench.reset();
             if (App.tabs.review.reset) App.tabs.review.reset();
             refreshHeader();
@@ -127,12 +127,17 @@
             h('div', { class: 'spread', style: 'margin-bottom:10px' },
                 h('h2', null, filter ? `${images.length} images: ${d.health_checks[filter].name.toLowerCase()}` : 'All images'),
                 h('span', { class: 'row' },
-                    h('span', { class: 'hint' }, 'Click an image to see it large and give it a Hint. ★ pins it to the Sampler Box (test set).'),
+                    h('label', { style: 'margin:0' }, 'View'),
+                    h('select', { style: 'width:auto', onchange: (e) => { view = e.target.value; localStorage.setItem('pantryView', view); render(); } },
+                        [['list', 'List with hint lines'], ['grid', 'Grid']].map(([value, label]) => h('option', { value, selected: view === value }, label))),
                     h('label', { style: 'margin:0' }, 'Order'),
                     h('select', { style: 'width:auto', onchange: (e) => { order = e.target.value; localStorage.setItem('pantryOrder', order); render(); } },
                         [['az', 'File name, A to Z'], ['za', 'File name, Z to A'], ['todo', 'Not captioned first'], ['problems', 'Most freshness notes first']]
                             .map(([value, label]) => h('option', { value, selected: order === value }, label))))),
-            h('div', { class: 'thumbs' }, images.slice(0, shown).map((image) => {
+            h('p', { class: 'hint', style: 'margin-bottom:10px' }, view === 'list'
+                ? 'A hint is given to the model as fact when it looks at that image, in the Taste Test and in the Candy Factory. Leave it empty for images that need no help. Click a picture to see it large; ★ pins it to the Sampler Box (test set).'
+                : 'Click an image to see it large and give it a hint. ★ pins it to the Sampler Box (test set).'),
+            h('div', { class: view === 'grid' ? 'thumbs' : 'pantry-list' }, images.slice(0, shown).map((image) => {
                 const unreadable = image.health.some((b) => b.check === 'unreadable');
                 const pin = h('button', {
                     class: 'pin' + (image.pinned ? ' on' : ''), title: 'Pin to the Sampler Box (test set)', onclick: (e) => {
@@ -140,73 +145,51 @@
                         act(null, async () => { await api('/api/test/pin', 'POST', { id: image.id, pinned: !image.pinned }); image.pinned = !image.pinned; pin.classList.toggle('on', image.pinned); });
                     },
                 }, '★');
-                return h('div', { class: 'thumb', title: `${image.rel} · ${image.width}×${image.height}`, onclick: () => { if (!unreadable) viewImage(image.id, image.rel, image.has_caption ? [['Open in the Sorting Table', () => App.tabs.review.open(image.id)]] : [], { value: image.note, onsave: (saved) => { image.note = saved; render(); } }); } },
-                    unreadable ? h('div', { style: 'aspect-ratio:1; display:grid; place-items:center', class: 'muted' }, 'cannot be read') : h('img', { src: thumbUrl(image.id), loading: 'lazy' }),
-                    unreadable ? null : pin,
+                const open = () => { if (!unreadable) viewImage(image.id, image.rel, image.has_caption ? [['Open in the Sorting Table', () => App.tabs.review.open(image.id)]] : [], { value: image.note, onsave: (saved) => { image.note = saved; render(); } }); };
+                const picture = unreadable ? h('div', { style: 'aspect-ratio:1; display:grid; place-items:center', class: 'muted' }, 'cannot be read') : h('img', { src: thumbUrl(image.id), loading: 'lazy' });
+                const badges = image.health.map((b) => {
+                    const chip = healthChip(b.check, b.detail);
+                    if (['sideways', 'transparency'].includes(b.check)) {
+                        chip.classList.add('clickable');
+                        chip.title += '. Click to fix this image.';
+                        chip.onclick = (e) => {
+                            e.stopPropagation();
+                            act(null, async () => {
+                                if (!confirm(`Fix ${image.rel} in place? The original is kept in CandyCaption's backup folder.`)) return;
+                                await api('/api/dataset/fix', 'POST', { kind: b.check, id: image.id });
+                                await reload();
+                            });
+                        };
+                    }
+                    return chip;
+                });
+                const captioned = image.has_caption ? h('span', { class: 'chip good', title: 'Has a description' }, '✓ captioned') : null;
+                if (view === 'list') {
+                    // One row per image with its hint line: fill in only the ones the model needs help with.
+                    const saved = h('span', { class: 'hint', style: 'min-width:44px' });
+                    const hint = h('input', {
+                        type: 'text', value: image.note || '', disabled: unreadable, placeholder: 'Hint (optional): one line telling the model what is in this image',
+                        onchange: () => act(null, async () => { image.note = (await api(`/api/image/${image.id}/note`, 'PUT', { text: hint.value })).note; hint.value = image.note; saved.textContent = image.note ? 'saved' : 'cleared'; }),
+                    });
+                    return h('div', { class: 'pantry-row' },
+                        h('div', { class: 'thumb', title: 'Click to see the image at full size', onclick: open }, picture, unreadable ? null : pin),
+                        h('div', { style: 'min-width:0' }, h('b', { title: `${image.width}×${image.height}` }, image.rel), h('div', { class: 'chips', style: 'margin-top:4px' }, captioned, badges)),
+                        hint, saved);
+                }
+                return h('div', { class: 'thumb', title: `${image.rel} · ${image.width}×${image.height}`, onclick: open },
+                    picture, unreadable ? null : pin,
                     h('span', { class: 'state chips' },
                         image.has_caption ? h('span', { class: 'chip good', title: 'Has a description' }, '✓') : null,
                         image.note ? h('span', { class: 'chip neutral', style: 'background:rgba(0,0,0,0.6)', title: `Hint: ${image.note}` }, '✎ hint') : null),
                     h('div', { class: 'name' }, image.rel),
-                    h('div', { class: 'chips' }, image.health.map((b) => {
-                        const chip = healthChip(b.check, b.detail);
-                        if (['sideways', 'transparency'].includes(b.check)) {
-                            chip.classList.add('clickable');
-                            chip.title += '. Click to fix this image.';
-                            chip.onclick = (e) => {
-                                e.stopPropagation();
-                                act(null, async () => {
-                                    if (!confirm(`Fix ${image.rel} in place? The original is kept in CandyCaption's backup folder.`)) return;
-                                    await api('/api/dataset/fix', 'POST', { kind: b.check, id: image.id });
-                                    await reload();
-                                });
-                            };
-                        }
-                        return chip;
-                    })));
+                    h('div', { class: 'chips' }, badges));
             })),
             images.length > shown ? h('div', { style: 'text-align:center; margin-top:12px' }, h('button', { class: 'quiet', onclick: () => { shown += 480; render(); } }, `Show more (${images.length - shown} left)`)) : null);
     }
 
-    function replaceCard() {
-        const find = h('input', { type: 'text', placeholder: 'Find', class: 'grow' });
-        const replace = h('input', { type: 'text', placeholder: 'Replace with (empty removes it)', class: 'grow' });
-        const options = { case: h('input', { type: 'checkbox' }), whole: h('input', { type: 'checkbox' }), regex: h('input', { type: 'checkbox' }) };
-        const query = () => ({ find: find.value, replace: replace.value, case: options.case.checked, whole: options.whole.checked, regex: options.regex.checked });
-        const results = h('div', { style: 'margin-top:12px' });
-        let last = null;
-
-        const showChanges = () => {
-            if (!changes) { results.replaceChildren(); return; }
-            if (!changes.length) { results.replaceChildren(h('p', { class: 'hint' }, 'No description contains that.')); return; }
-            const boxes = changes.map(() => h('input', { type: 'checkbox', checked: true }));
-            results.replaceChildren(
-                h('div', { class: 'spread', style: 'margin-bottom:8px' }, h('b', null, `${changes.length} descriptions would change`),
-                    h('button', {
-                        onclick: (e) => act(e.target, async () => {
-                            const ids = changes.filter((c, i) => boxes[i].checked).map((c) => c.id);
-                            const result = await api('/api/replace/apply', 'POST', { ...last, ids });
-                            toast(`${result.changed} descriptions changed. The old versions are in each image's history.`);
-                            changes = null; showChanges();
-                        }),
-                    }, 'Apply to the ticked ones')),
-                h('div', { style: 'max-height:420px; overflow:auto' }, changes.map((change, i) => h('div', { class: 'row', style: 'align-items:flex-start; padding:8px 0; border-bottom:1px solid var(--input-border)' },
-                    boxes[i], h('div', { class: 'grow' }, h('b', { style: 'font-size:12px' }, change.rel), h('div', { class: 'diff', style: 'margin-top:4px' }, wordDiff(change.before, change.after)))))));
-        };
-
-        return h('div', { class: 'card' },
-            h('h2', null, candy('Swap the Sprinkles', 'find and replace across every description')),
-            h('div', { class: 'row', style: 'margin-top:10px' }, find, replace,
-                h('button', { class: 'quiet', onclick: (e) => act(e.target, async () => { last = query(); changes = (await api('/api/replace/preview', 'POST', last)).changes; showChanges(); }) }, 'Preview changes')),
-            h('div', { class: 'row', style: 'margin-top:8px' },
-                h('label', { class: 'check', style: 'margin:0' }, options.case, 'Match case'),
-                h('label', { class: 'check', style: 'margin:0' }, options.whole, 'Whole words only'),
-                h('label', { class: 'check', style: 'margin:0' }, options.regex, 'Regular expression')),
-            results);
-    }
-
     function render() {
         if (!App.dataset.open) { panel.replaceChildren(openBar()); return; }
-        panel.replaceChildren(openBar(), healthCard(), grid(), replaceCard());
+        panel.replaceChildren(openBar(), healthCard(), grid());
     }
 
     App.tabs.dataset = { show: () => act(null, async () => { if (App.dataset.open) await reload(); else render(); }), openFolder };

@@ -83,10 +83,10 @@ first run: it sends one tiny image and records what your server supports.
 | --- | --- | --- |
 | Candy Shop | Connect | Pick the backend, the captioner and the optional verifier, then Test connection. |
 | Recipe Box | Prefills | Edit the Style, Character and Concept prefills: prompts, rules, fields and their order, option toggles, banned words. |
-| Pantry | Dataset | Open a folder. Health checks run at once. Find and replace lives here too. |
+| Pantry | Dataset | Open a folder. Health checks run at once. Each image has an optional hint line: one sentence telling the model what is in it, given as fact whenever that image is captioned. |
 | Taste Test | Test bench | Pin 5 to 10 hard images, give an image a Hint if the model needs help, write a few answer-key facts, and compare recipe versions on them before a full run. |
 | Candy Factory | Run | Start, pause, resume and stop the batch, and watch it live. |
-| Sorting Table | Review | The doubtful captions, worst first, with the field in doubt named. Fix them by hand or by talking to the model. |
+| Sorting Table | Review | The doubtful captions, worst first, with the field in doubt named. Fix them by hand or by talking to the model. All caption editing is here, including find and replace. |
 
 ## Update
 

@@ -280,6 +280,50 @@ function setTheme(theme) {
     localStorage.setItem('theme', theme);
 }
 
+// --- The finish sound: a handful of gumdrops dropping into a jar ---
+// Made with the browser's own tone generator, so there is no sound file to ship.
+let audio = null;
+const soundOn = () => localStorage.getItem('sound') !== 'off';
+function wakeAudio() {
+    try {
+        audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+        if (audio.state === 'suspended') audio.resume();
+    } catch (err) { audio = null; }
+}
+// Browsers only allow sound after a click, so the generator is woken on the first one.
+document.addEventListener('pointerdown', wakeAudio, { once: true });
+
+function playGumdrops(force = false) {
+    if (!soundOn() && !force) return;
+    wakeAudio();
+    if (!audio) return;
+    const start = audio.currentTime + 0.03;
+    // Each drop is a short tone that falls in pitch (the "plop"), then a quieter bounce.
+    const drops = [[0.00, 880], [0.14, 700], [0.25, 990], [0.41, 620], [0.52, 830], [0.72, 560]];
+    for (const [at, pitch] of drops) {
+        for (const [delay, level, scale] of [[0, 0.22, 1], [0.085, 0.07, 0.8]]) {
+            const tone = audio.createOscillator(), volume = audio.createGain();
+            const t = start + at + delay;
+            tone.type = 'sine';
+            tone.frequency.setValueAtTime(pitch * scale * 1.3, t);
+            tone.frequency.exponentialRampToValueAtTime(pitch * scale * 0.55, t + 0.1);
+            volume.gain.setValueAtTime(0.0001, t);
+            volume.gain.exponentialRampToValueAtTime(level, t + 0.008);
+            volume.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+            tone.connect(volume).connect(audio.destination);
+            tone.start(t);
+            tone.stop(t + 0.18);
+        }
+    }
+}
+
+function setSound(on) {
+    localStorage.setItem('sound', on ? 'on' : 'off');
+    const button = $('#soundToggle');
+    button.textContent = on ? '🔔' : '🔕';
+    button.title = on ? 'Finish sound is on (gumdrops when a test or batch finishes). Click to turn it off.' : 'Finish sound is off. Click to turn it on.';
+}
+
 // --- Live events ---
 const eventHandlers = {};
 function on(type, fn) { (eventHandlers[type] = eventHandlers[type] || []).push(fn); }

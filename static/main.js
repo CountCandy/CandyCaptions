@@ -6,6 +6,8 @@
         const current = document.documentElement.getAttribute('data-theme');
         setTheme(THEMES[(THEMES.indexOf(current) + 1) % THEMES.length]);
     });
+    setSound(soundOn());
+    $('#soundToggle').addEventListener('click', () => { setSound(!soundOn()); if (soundOn()) playGumdrops(); });
     $$('.tab[data-tab]').forEach((tab) => tab.addEventListener('click', () => showTab(tab.dataset.tab)));
     $('#modelPill').addEventListener('click', () => showTab('connect'));
     $('#datasetPill').addEventListener('click', () => showTab('dataset'));

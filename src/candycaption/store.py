@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS testset (image_id INTEGER PRIMARY KEY, facts TEXT);
 CREATE TABLE IF NOT EXISTS test_runs (id INTEGER PRIMARY KEY, created REAL, label TEXT, snapshot TEXT, results TEXT);
 """
 
+MAX_TEST_RUNS = 8
 JSON_COLUMNS = {"fields", "signals", "health"}
 
 
@@ -194,12 +195,21 @@ class Store:
         self._run("UPDATE testset SET facts=? WHERE image_id=?", (json.dumps(facts), image_id))
 
     def add_test_run(self, label: str, snapshot: dict[str, Any], results: list[dict[str, Any]]) -> int:
-        return self._run("INSERT INTO test_runs(created,label,snapshot,results) VALUES(?,?,?,?)",
-                         (time.time(), label, json.dumps(snapshot), json.dumps(results))).lastrowid
+        run_id = self._run("INSERT INTO test_runs(created,label,snapshot,results) VALUES(?,?,?,?)",
+                           (time.time(), label, json.dumps(snapshot), json.dumps(results))).lastrowid
+        # A hard limit: only the newest versions are kept.
+        self._run("DELETE FROM test_runs WHERE id NOT IN (SELECT id FROM test_runs ORDER BY id DESC LIMIT ?)", (MAX_TEST_RUNS,))
+        return run_id
+
+    def delete_test_runs(self, run_id: int | None = None) -> None:
+        if run_id is None:
+            self._run("DELETE FROM test_runs")
+        else:
+            self._run("DELETE FROM test_runs WHERE id=?", (run_id,))
 
     def test_runs(self) -> list[dict[str, Any]]:
         out = []
-        for row in self._all("SELECT * FROM test_runs ORDER BY id DESC LIMIT 30"):
+        for row in self._all("SELECT * FROM test_runs ORDER BY id DESC LIMIT ?", (MAX_TEST_RUNS,)):
             out.append({"id": row["id"], "created": row["created"], "label": row["label"],
                         "snapshot": json.loads(row["snapshot"]), "results": json.loads(row["results"])})
         return out

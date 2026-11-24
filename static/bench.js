@@ -4,7 +4,7 @@
     const panel = $('#panel-bench');
     let bench = { pins: [], runs: [] };
     let selA = null, selB = null;
-    let progress = '';
+    let tasting = null;   // progress of the test run in flight, or the last one finished
     const details = {};   // run id -> full run
 
     const VERDICTS = { captured: ['good', '✓'], wrong: ['bad', '✗'], missing: ['neutral', '–'] };
@@ -67,11 +67,12 @@
     }
 
     async function comparison() {
-        if (!selA) return null;
+        if (!selA || !bench.runs.some((r) => r.id === selA)) return null;
+        if (selB && !bench.runs.some((r) => r.id === selB)) selB = null;
         const a = await runDetail(selA);
         const b = selB && selB !== selA ? await runDetail(selB) : null;
         const head = (run) => h('div', null, h('b', null, run.label),
-            h('div', { class: 'hint' }, `${run.summary.prefill} · ${run.summary.preset} · facts ${run.summary.captured}/${run.summary.facts} captured, ${run.summary.wrong} wrong`));
+            h('div', { class: 'hint' }, `${run.summary.model || 'model not recorded'} · ${run.summary.prefill} · ${run.summary.preset} · facts ${run.summary.captured}/${run.summary.facts} captured, ${run.summary.wrong} wrong`));
         return h('div', { class: 'card' },
             h('h2', null, b ? 'Side by side' : 'Results'),
             h('div', { class: 'compare' + (b ? '' : ' single'), style: 'padding-top:6px' }, h('span'), head(a), b ? head(b) : null),
@@ -125,26 +126,49 @@
                     disabled: !bench.pins.length, onclick: (e) => act(e.target, async () => {
                         e.target.textContent = 'Tasting…';
                         await flushDatasetSettings();
-                        const data = await api('/api/test/run', 'POST', { label: label.value, twice: twice.checked });
+                        const rounds = twice.checked ? 2 : 1;
+                        tasting = { done: 0, total: bench.pins.length * rounds, rel: '', finished: false, round: 0, rounds, label: '' };
+                        showProgress();
+                        let data;
+                        try {
+                            data = await api('/api/test/run', 'POST', { label: label.value, twice: twice.checked });
+                        } catch (err) {
+                            tasting = null;
+                            showProgress();
+                            throw err;
+                        }
+                        tasting = { ...tasting, done: tasting.total, finished: true };
+                        playGumdrops();
                         bench = data;
                         if (data.run_ids.length === 2) [selA, selB] = data.run_ids;
                         else { selB = selA; selA = data.run_ids[0]; if (!selB) selB = null; }
-                        progress = '';
                         render();
                     }),
                 }, 'Run on the Sampler Box')),
             h('label', { class: 'check', style: 'margin-top:10px' }, twice, 'Run it twice to see normal variation',
                 h('span', { class: 'plain' }, 'some servers are not exactly reproducible even with a fixed seed')),
-            h('p', { class: 'hint', id: 'benchProgress' }, progress));
+            h('div', { class: 'gen-progress', role: 'status', 'aria-live': 'polite', style: 'margin:12px 0 0' },
+                h('div', { class: 'gen-progress-top' }, h('span', { class: 'gen-flavor', id: 'benchFlavor' }), h('span', { class: 'gen-percent', id: 'benchPercent' })),
+                h('div', { class: 'gen-track', id: 'benchTrack' }, h('div', { class: 'gen-reveal', id: 'benchReveal' }))));
 
         const runs = h('div', { class: 'card' },
-            h('h2', null, 'Versions tried'),
+            h('div', { class: 'spread' },
+                h('h2', null, 'Versions tried', h('span', { class: 'plain' }, 'the newest 8 are kept')),
+                bench.runs.length ? h('button', {
+                    class: 'quiet small', onclick: (e) => act(e.target, async () => {
+                        if (!confirm('Clear every version tried for this dataset? Nothing in the dataset folder changes.')) return;
+                        bench = await api('/api/test/runs', 'DELETE');
+                        App.tabs.bench.reset();
+                        render();
+                    }),
+                }, 'Clear all') : null),
             bench.runs.length ? h('table', { style: 'margin-top:8px' },
-                h('tr', null, h('th', { title: 'Left column' }, 'A'), h('th', { title: 'Right column' }, 'B'), h('th', null, 'Version'), h('th', null, 'Recipe'), h('th', null, 'Facts captured'), h('th', null, 'Wrong'), h('th', null, 'Flagged'), h('th')),
+                h('tr', null, h('th', { title: 'Left column' }, 'A'), h('th', { title: 'Right column' }, 'B'), h('th', null, 'Version'), h('th', null, 'Model'), h('th', null, 'Recipe'), h('th', null, 'Facts captured'), h('th', null, 'Wrong'), h('th', null, 'Flagged'), h('th')),
                 bench.runs.map((run) => h('tr', null,
                     h('td', null, h('input', { type: 'radio', name: 'benchA', checked: run.id === selA, onchange: () => { selA = run.id; render(); } })),
                     h('td', null, h('input', { type: 'radio', name: 'benchB', checked: run.id === selB, onchange: () => { selB = run.id; render(); } })),
                     h('td', null, run.label, h('div', { class: 'hint' }, new Date(run.created * 1000).toLocaleString())),
+                    h('td', null, run.model || '–', run.verifier_model && run.verifier_model !== run.model ? h('div', { class: 'hint' }, `Taste Tester: ${run.verifier_model}`) : null),
                     h('td', null, run.prefill, h('div', { class: 'hint' }, run.preset)),
                     h('td', null, run.facts ? `${run.captured} of ${run.facts}` : h('span', { class: 'hint' }, 'no facts written')),
                     h('td', null, run.wrong || h('span', { class: 'muted' }, '0')),
@@ -156,24 +180,59 @@
                             toast(`"${run.label}" is now this dataset's recipe.`);
                             render();
                         }),
-                    }, 'Promote')))))
+                    }, 'Promote'), ' ',
+                    h('button', {
+                        class: 'quiet icon-btn', title: 'Remove this version', onclick: (e) => act(e.target, async () => {
+                            bench = await api(`/api/test/run/${run.id}`, 'DELETE');
+                            delete details[run.id];
+                            if (selA === run.id) selA = bench.runs.length ? bench.runs[0].id : null;
+                            if (selB === run.id) selB = null;
+                            render();
+                        }),
+                    }, '✕')))))
                 : h('p', { class: 'hint', style: 'margin-top:8px' }, 'No test runs yet.'));
 
         const compareSlot = h('div');
         panel.replaceChildren(
             h('div', { class: 'card' }, h('h2', { style: 'margin-bottom:12px' }, candy('This dataset\'s recipe', 'run settings, shared with the Candy Factory tab')), recipe),
             h('div', { class: 'grid2' }, pins, h('div', null, runCard, runs)), compareSlot);
+        showProgress();
         try {
             const view = await comparison();
             if (view) compareSlot.replaceChildren(view);
         } catch (err) { toast(err.message, true); }
     }
 
+    // The rock-candy bar for a test run. `tasting` is null until a test has been started in this session.
+    function showProgress() {
+        const track = $('#benchTrack'), reveal = $('#benchReveal');
+        if (!track) return;
+        const width = Math.max(1, Math.round(track.clientWidth));
+        if (reveal.dataset.width !== String(width)) { reveal.innerHTML = buildCrustSVG(width, 42); reveal.dataset.width = String(width); }
+        const flavor = $('#benchFlavor'), percent = $('#benchPercent');
+        if (!tasting) {
+            reveal.style.width = '0%';
+            flavor.textContent = bench.pins.length ? `${bench.pins.length} pieces in the Sampler Box, ready to taste.` : 'The Sampler Box is empty. Pin a few images first.';
+            percent.textContent = '';
+            return;
+        }
+        reveal.style.width = `${tasting.total ? Math.min(100, (tasting.done / tasting.total) * 100) : 0}%`;
+        percent.textContent = `${tasting.done} of ${tasting.total}`;
+        const model = App.settings.model ? ` with ${App.settings.model}` : '';
+        flavor.textContent = tasting.finished ? `Taste test done${model}.`
+            : tasting.rel ? `Tasting ${tasting.rel}${model}…` : `Warming up the taste buds${model}…`;
+    }
+
     on('test_progress', (event) => {
-        progress = event.done < event.total ? `${event.label}: ${event.done + 1} of ${event.total}, ${event.rel}` : '';
-        const el = $('#benchProgress');
-        if (el) el.textContent = progress;
+        if (!tasting || tasting.finished) return;
+        // With "run it twice" the server reports each round from zero, so rounds are added up here.
+        if (event.label !== tasting.label) { tasting.label = event.label; tasting.round += 1; }
+        const perRound = tasting.total / tasting.rounds;
+        tasting.done = Math.min(tasting.total, (tasting.round - 1) * perRound + event.done);
+        tasting.rel = event.rel || tasting.rel;
+        showProgress();
     });
+    window.addEventListener('resize', debounce(() => { if (App.tab === 'bench') showProgress(); }, 150));
 
     App.tabs.bench = {
         show: () => act(null, async () => {

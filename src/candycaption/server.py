@@ -512,7 +512,7 @@ def runner() -> Runner:
 @app.get("/api/run")
 async def run_status():
     if state.runner is None:
-        return {"state": "idle", "total": 0, "done": 0, "failed": 0, "skipped": 0, "in_flight": [], "recent": [], "message": ""}
+        return {"state": "idle", "model": None, "verifier_model": None, "total": 0, "done": 0, "failed": 0, "skipped": 0, "in_flight": [], "recent": [], "message": ""}
     return state.runner.status()
 
 
@@ -568,7 +568,8 @@ def review_row(proj: Project, image: dict[str, Any], settings: dict[str, Any], n
         row.update(
             field_defs=prefill["fields"], signals=image["signals"], history=proj.store.history(image["id"]),
             health=proj.health(image, settings), width=image["width"], height=image["height"],
-            snapshot={"prefill": prefill["name"], "model": (snapshot or {}).get("model"), "preset": (snapshot or {}).get("preset"),
+            snapshot={"prefill": prefill["name"], "model": (snapshot or {}).get("model"),
+                      "verifier_model": (snapshot or {}).get("verifier_model"), "preset": (snapshot or {}).get("preset"),
                       "extra_instructions": (snapshot or {}).get("extra_instructions", "")} if snapshot else None,
             token_limit=settings.get("token_limit", 512), tokenizer=tokens.status(settings),
         )
@@ -867,6 +868,18 @@ async def bench_run(body: dict = Body(default={})):
         state.bench_busy = False
         await client.close()
     return {"run_ids": ids, **bench_payload()}
+
+
+@app.delete("/api/test/runs")
+async def bench_clear():
+    project().store.delete_test_runs()
+    return bench_payload()
+
+
+@app.delete("/api/test/run/{run_id}")
+async def bench_delete(run_id: int):
+    project().store.delete_test_runs(run_id)
+    return bench_payload()
 
 
 @app.get("/api/test/run/{run_id}")

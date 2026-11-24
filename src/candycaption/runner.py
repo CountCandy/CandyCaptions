@@ -60,6 +60,7 @@ class Runner:
         self.message = ""
         self.mode = "caption"
         self.run_id: int | None = None
+        self.models: tuple[str | None, str | None] = (None, None)
         self.total = self.done = self.failed = self.skipped = 0
         self.in_flight: dict[int, dict[str, Any]] = {}
         self.recent: deque[dict[str, Any]] = deque(maxlen=8)
@@ -84,6 +85,8 @@ class Runner:
                 eta = left / ((len(self._finishes) - 1) / span)
         return {
             "state": self.state, "message": self.message, "mode": self.mode, "run_id": self.run_id,
+            # Which models made this batch, so it is on record next to the results.
+            "model": self.models[0], "verifier_model": self.models[1],
             "total": self.total, "done": self.done, "failed": self.failed, "skipped": self.skipped, "left": left,
             "seconds_per_image": round(self._seconds / self.done, 2) if self.done else None,
             "check_seconds_per_image": round(self._check_seconds / self.done, 2) if self.done else None,
@@ -192,6 +195,7 @@ class Runner:
             snapshot = build_snapshot(self.project, self.app)
             snapshot_id = store.add_snapshot(snapshot)
         self.run_id = snapshot_id
+        self.models = (snapshot.get("model"), snapshot.get("verifier_model"))
 
         todo = await asyncio.to_thread(self._plan, mode, image_ids, open_run["run_id"] if open_run else None)
         self.total = len(todo) + self.skipped

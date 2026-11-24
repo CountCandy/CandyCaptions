@@ -115,6 +115,12 @@
                 onclick: (e) => { if (confirm('Rewrite every caption from its stored fields, using the current recipe? Old captions stay in history.')) control('start', e.target, { mode: 'compose' }); },
             }, 'Recompose only') : null);
 
+        const taster = s.verifier_model && s.verifier_model !== s.model ? ` · Taste Tester: ${s.verifier_model}` : '';
+        const chosen = App.settings.verifier_model && App.settings.verifier_model !== App.settings.model ? ` · Taste Tester: ${App.settings.verifier_model}` : '';
+        $('#runModels').textContent = s.model
+            ? `${busy() ? 'This batch' : 'Last batch'}: Captioner: ${s.model}${taster}`
+            : (App.settings.model ? `Next batch: Captioner: ${App.settings.model}${chosen}` : 'No model chosen yet');
+
         const interrupted = s.interrupted && !busy();
         $('#runNotice').replaceChildren(...(interrupted ? [h('div', { class: 'notice', style: 'margin-bottom:16px' },
             'A batch was interrupted before it finished. ',
@@ -180,7 +186,7 @@
             h('div', { class: 'gen-progress', role: 'status', 'aria-live': 'polite' },
                 h('div', { class: 'gen-progress-top' }, h('span', { class: 'gen-flavor', id: 'runFlavor' }), h('span', { class: 'gen-percent', id: 'runPercent' })),
                 h('div', { class: 'gen-track', id: 'runTrack' }, h('div', { class: 'gen-reveal', id: 'runReveal' })),
-                h('div', { class: 'spread', style: 'margin-top:12px' }, h('div', { class: 'row', id: 'runButtons' })),
+                h('div', { class: 'spread', style: 'margin-top:12px' }, h('div', { class: 'row', id: 'runButtons' }), h('span', { class: 'hint', id: 'runModels' })),
                 h('div', { class: 'stats', id: 'runStats' })),
             h('div', { id: 'runLive' }),
             h('div', { id: 'runMisshapes' }, misshapeNodes()));
@@ -193,6 +199,8 @@
         const before = status();
         App.run = event;
         if (App.tab === 'run') update();
+        // Gumdrops when a batch finishes. Regenerating a single image stays quiet.
+        if (event.state === 'done' && before.state !== 'done' && before.state !== 'idle' && event.total > 1) playGumdrops();
         if (event.failed !== before.failed || (event.state !== before.state && ['done', 'stopped'].includes(event.state))) loadMisshapes();
         if (event.state !== before.state && ['done', 'stopped'].includes(event.state) && App.tabs.review.refreshCount) App.tabs.review.refreshCount();
     });

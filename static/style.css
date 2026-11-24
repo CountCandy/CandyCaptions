@@ -400,3 +400,12 @@ pre.payload { max-height: 60vh; overflow: auto; padding: 12px; border-radius: 8p
 .legend { font-size: 12.5px; }
 .legend table { margin: 4px 0; }
 .legend td { border: none; padding: 4px 8px 4px 0; color: var(--text-secondary); }
+
+/* Pantry list view: one row per image with its hint line */
+.pantry-row { display: grid; grid-template-columns: 76px minmax(160px, 260px) 1fr auto; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--input-border); }
+.pantry-row:last-child { border-bottom: none; }
+.pantry-row .thumb { width: 76px; }
+.pantry-row .thumb .pin { width: 22px; height: 22px; font-size: 11px; top: 3px; right: 3px; }
+.pantry-row b { font-size: 12.5px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 900px) { .pantry-row { grid-template-columns: 76px 1fr; } .pantry-row input { grid-column: 1 / -1; } }
+.sound-toggle { background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px; padding: 6px 10px; font-size: 14px; line-height: 1; box-shadow: none; }
