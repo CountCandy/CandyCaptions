@@ -670,6 +670,15 @@ async def approve(image_id: int, body: dict = Body(default={})):
     return {"ok": True}
 
 
+@app.put("/api/image/{image_id}/note")
+async def set_note(image_id: int, body: dict = Body(...)):
+    """What you know about one image. It is told to the model as fact the next time the image is captioned."""
+    image_or_404(image_id)
+    note = " ".join((body.get("text") or "").split())
+    project().store.update_image(image_id, note=note)
+    return {"note": note}
+
+
 @app.post("/api/review/{image_id}/regenerate")
 async def regenerate(image_id: int, body: dict = Body(default={})):
     run = runner()
@@ -797,7 +806,7 @@ def bench_payload() -> dict[str, Any]:
     for image_id, facts in proj.store.testset().items():
         image = proj.store.image(image_id)
         if image and not image["missing"]:
-            pins.append({"id": image_id, "rel": image["rel"], "facts": facts})
+            pins.append({"id": image_id, "rel": image["rel"], "facts": facts, "note": image.get("note") or ""})
     pins.sort(key=lambda pin: natural_key(pin["rel"]))
     return {"pins": pins, "runs": [summarize(r) for r in proj.store.test_runs()], "busy": state.bench_busy}
 

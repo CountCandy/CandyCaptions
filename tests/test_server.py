@@ -263,3 +263,29 @@ async def test_picture_addresses_differ_between_datasets_and_file_versions(api, 
     before = second["images"][0]["v"]
     make_image(other / "plain.png", (9, 9, 9), size=(640, 640))
     assert (await api.post("/api/dataset/rescan")).json()["images"][0]["v"] != before
+
+
+async def test_the_answer_key_never_reaches_the_model_but_the_note_does(api, dataset, mock_url):
+    images = (await api.get("/api/dataset")).json()["images"]
+    target = next(i for i in images if i["rel"] == "plain.png")
+    await api.post("/api/test/pin", json={"id": target["id"], "pinned": True})
+    await api.put("/api/test/facts", json={"id": target["id"], "facts": ["SECRET-ANSWER-KEY sits on a stump"]})
+    saved = (await api.put(f"/api/image/{target['id']}/note", json={"text": "An elf girl sits on a  tree stump."})).json()
+    assert saved["note"] == "An elf girl sits on a tree stump."
+    assert (await api.get("/api/test")).json()["pins"][0]["note"] == saved["note"]
+
+    requests = mock_url[1].state.mock["requests"]
+    requests.clear()
+    await api.post("/api/test/run", json={"label": "notes"})
+    bodies = [str(r["body"]) for r in requests]
+    look = next(b for b in bodies if "caption_fields" in b)
+    compose = next(b for b in bodies if "Notes:" in b and "fact_scores" not in b)
+    scoring = next(b for b in bodies if "fact_scores" in b)
+    # The note is told to both captioning steps as fact.
+    assert "An elf girl sits on a tree stump." in look and "Known facts about this image" in look
+    assert "An elf girl sits on a tree stump." in compose
+    # The answer key is only ever used to score the finished caption.
+    assert "SECRET-ANSWER-KEY" not in look and "SECRET-ANSWER-KEY" not in compose and "SECRET-ANSWER-KEY" in scoring
+
+    preview = (await api.post("/api/test/request", json={"id": target["id"]})).json()
+    assert "An elf girl" in str(preview["look"]["body"]) and "An elf girl" in str(preview["compose"]["body"])

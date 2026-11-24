@@ -223,7 +223,10 @@
         const counter = h('span', { class: 'counter' + (over ? ' over' : ''), title: `Tags plus description, counted with: ${d.tokenizer.source}` },
             `${d.words} words · ${d.tokens} of ${d.token_limit} tokens${d.tokenizer.exact ? '' : ' (approximate)'}${over ? ' · over the limit' : ''}`);
         caption.addEventListener('input', () => { counter.textContent = `${caption.value.trim().split(/\s+/).filter(Boolean).length} words · saves when you click away`; counter.className = 'counter'; });
-        const extra = h('textarea', { rows: 2, class: 'grow', value: d.note || '', placeholder: 'An elf girl sits on a tree stump and plays an ocarina.' });
+        const extra = h('textarea', {
+            rows: 2, class: 'grow', value: d.note || '', placeholder: 'An elf girl sits on a tree stump and plays an ocarina.',
+            onchange: (e) => act(null, async () => { d.note = (await api(`/api/image/${d.id}/note`, 'PUT', { text: e.target.value })).note; toast('Saved. Press Regenerate to caption this image again with it.'); }),
+        });
 
         const fields = (d.field_defs || []).map((def) => {
             const value = (d.fields || {})[def.key] || '';
