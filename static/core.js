@@ -284,6 +284,7 @@ function setTheme(theme) {
 // Made with the browser's own tone generator, so there is no sound file to ship.
 let audio = null;
 const soundOn = () => localStorage.getItem('sound') !== 'off';
+const soundVolume = () => { const v = parseFloat(localStorage.getItem('volume')); return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.6; };
 function wakeAudio() {
     try {
         audio = audio || new (window.AudioContext || window.webkitAudioContext)();
@@ -298,6 +299,8 @@ function playGumdrops(force = false) {
     wakeAudio();
     if (!audio) return;
     const start = audio.currentTime + 0.03;
+    const loudness = soundVolume() / 0.6;   // 0.6 is the level the drops were tuned at
+    if (loudness <= 0) return;
     // Each drop is a short tone that falls in pitch (the "plop"), then a quieter bounce.
     const drops = [[0.00, 880], [0.14, 700], [0.25, 990], [0.41, 620], [0.52, 830], [0.72, 560]];
     for (const [at, pitch] of drops) {
@@ -308,7 +311,7 @@ function playGumdrops(force = false) {
             tone.frequency.setValueAtTime(pitch * scale * 1.3, t);
             tone.frequency.exponentialRampToValueAtTime(pitch * scale * 0.55, t + 0.1);
             volume.gain.setValueAtTime(0.0001, t);
-            volume.gain.exponentialRampToValueAtTime(level, t + 0.008);
+            volume.gain.exponentialRampToValueAtTime(Math.max(0.0002, level * loudness), t + 0.008);
             volume.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
             tone.connect(volume).connect(audio.destination);
             tone.start(t);
@@ -320,6 +323,7 @@ function playGumdrops(force = false) {
 function setSound(on) {
     localStorage.setItem('sound', on ? 'on' : 'off');
     const button = $('#soundToggle');
+    if (App.tab === 'connect' && App.tabs.connect) App.tabs.connect.show();
     button.textContent = on ? '🔔' : '🔕';
     button.title = on ? 'Finish sound is on (gumdrops when a test or batch finishes). Click to turn it off.' : 'Finish sound is off. Click to turn it on.';
 }

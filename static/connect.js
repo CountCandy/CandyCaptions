@@ -110,7 +110,19 @@
                 h('div', { class: 'field' }, h('label', null, 'Flag a field when "yes" falls below', h('span', { class: 'plain' }, 'probability')),
                     h('input', { type: 'number', step: 0.05, min: 0.05, max: 0.95, value: s.check_threshold, onchange: (e) => act(null, () => save({ check_threshold: Number(e.target.value) })) }))));
 
-        panel.replaceChildren(h('div', { class: 'grid2' }, h('div', null, server), h('div', null, honors, tokenizer, advanced)));
+        const level = h('output', null, `${Math.round(soundVolume() * 100)}%`);
+        const sounds = h('div', { class: 'card' },
+            h('h2', null, candy('Finish sound', 'gumdrops when a taste test or a batch finishes')),
+            h('label', { class: 'check', style: 'margin-top:10px' },
+                h('input', { type: 'checkbox', checked: soundOn(), onchange: (e) => setSound(e.target.checked) }), 'Play the sound'),
+            h('div', { class: 'slider-row' + (soundOn() ? '' : ' grayed'), style: 'grid-template-columns: 70px 1fr 48px auto' },
+                h('span', null, 'Volume'),
+                h('input', { type: 'range', min: 0, max: 1, step: 0.05, value: soundVolume(), disabled: !soundOn(), oninput: (e) => { localStorage.setItem('volume', e.target.value); level.textContent = `${Math.round(e.target.value * 100)}%`; } }),
+                level,
+                h('button', { class: 'quiet small', title: 'Plays even when the sound is switched off', onclick: () => playGumdrops(true) }, 'Test sound')),
+            h('p', { class: 'hint' }, 'Kept in this browser. The bell in the header also switches it on and off.'));
+
+        panel.replaceChildren(h('div', { class: 'grid2' }, h('div', null, server, sounds), h('div', null, honors, tokenizer, advanced)));
     }
 
     App.tabs.connect = { show: render };
