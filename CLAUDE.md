@@ -14,6 +14,7 @@ uv run candycaption mock         # fake OpenAI-style model server on :1234
 
 - The browser never talks to the model server. Every model request goes through `client.py`, holds
   exactly one image, sets `stream` explicitly, and resends no earlier messages.
+  The one exception is `style.explain` ("How does it differ?"), which sends four images to compare.
 - A sampling setting the backend ignores (`backends.py`) is never sent and is grayed out in the UI.
 - Fields are data: prefills carry their own field list and the JSON schema is built from it.
 - Nudity handling lives only in prefill text (`prefills.py`). No other module mentions it; a test checks this.
