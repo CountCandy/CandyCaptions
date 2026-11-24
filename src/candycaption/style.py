@@ -259,6 +259,8 @@ class StyleJob:
         self.project, self.app, self.publish, self.client_factory = project, app_settings, publish, client_factory
         self.state, self.message, self.step = "idle", "", ""
         self.done = self.total = 0
+        # Progress within the step under way, so "33 notes, then 33 checks" never reads as 66 images.
+        self.steps = self.step_number = self.step_done = self.step_total = 0
         self._task: asyncio.Task | None = None
 
     @property
@@ -266,7 +268,8 @@ class StyleJob:
         return self.state == "running"
 
     def status(self) -> dict[str, Any]:
-        return {"state": self.state, "message": self.message, "step": self.step, "done": self.done, "total": self.total}
+        return {"state": self.state, "message": self.message, "step": self.step, "done": self.done, "total": self.total,
+                "steps": self.steps, "step_number": self.step_number, "step_done": self.step_done, "step_total": self.step_total}
 
     def _tell(self) -> None:
         self.publish({"type": "style_progress", **self.status()})
@@ -282,7 +285,11 @@ class StyleJob:
 
     async def _each(self, images: list[dict[str, Any]], step: str, work) -> None:
         """Run `work` over the images, a few at a time, counting progress."""
-        self.step = step
+        if not images:
+            return
+        self.step, self.step_done, self.step_total = step, 0, len(images)
+        self.step_number += 1
+        self._tell()
         parallel = max(1, min(8, int(self.project.store.settings().get("parallel", 4))))
         gate = asyncio.Semaphore(parallel)
 
@@ -290,21 +297,25 @@ class StyleJob:
             async with gate:
                 await work(image)
                 self.done += 1
+                self.step_done += 1
                 self._tell()
 
         await asyncio.gather(*(one(image) for image in images))
 
     async def _run(self, redo: bool) -> None:
         self.state, self.message, self.done = "running", "", 0
+        self.step_number = self.step_done = self.step_total = 0
         store = self.project.store
         snapshot = build_snapshot(self.project, self.app)
         long_side = int(snapshot["sampling"].get("long_side", 1536))
         images = usable(self.project)
         aims = targets(self.project)
-        # Targets need a note too, even when they are outside the images being checked.
-        noted = {i["id"]: i for i in images + aims}
+        # With targets, the style is written from their notes alone, so only they need one.
+        # Without, every image needs a note, because the style is what most of them share.
+        noted = {i["id"]: i for i in (aims or images)}
         need_note = [i for i in noted.values() if redo or not note_of(i)]
         self.total = len(need_note) + len(images)
+        self.steps = 2 if need_note else 1
         self._tell()
         client = self.client_factory(self.app)
 

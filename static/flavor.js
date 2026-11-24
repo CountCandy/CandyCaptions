@@ -92,7 +92,9 @@
         return h('div', { class: 'card' },
             h('h2', null, candy('Odd One Out', 'style lens: each image checked against the set\'s own style')),
             h('p', { class: 'hint', style: 'margin:4px 0 12px' },
-                'The model writes a short style note for each image, sums the notes up into one style for the set, then looks at each image again and answers one question: is this made in that style? One image per request. The result is a ranking for your eye, not a verdict.'),
+                data.targets.length
+                    ? 'With target images set, the style is written from them alone. Then the model looks at each image once and answers one question: is this made in that style? It is one request per image however many targets there are. The result is a ranking for your eye, not a verdict.'
+                    : 'The model writes a short style note for each image, sums the notes up into one style for the set, then looks at each image again and answers one question: is this made in that style? That is two passes over the set the first time and one after that. The result is a ranking for your eye, not a verdict.'),
             h('div', { class: 'grid2', style: 'margin-bottom:12px' },
                 h('div', { class: 'notice' },
                     h('b', null, 'Images to check: '), data.selection ? `${data.count} of ${data.total} chosen` : `all ${data.total}`,
@@ -173,8 +175,10 @@
         const job = data.job;
         const idle = data.checked ? `${data.checked} of ${data.count} images checked against the ${data.made.targets ? 'target' : "set's"} style.` : `${data.count} images, not tasted yet.`;
         reveal.style.width = job.state === 'running' ? `${job.total ? Math.min(100, (job.done / job.total) * 100) : 0}%` : (job.state === 'done' ? '100%' : '0%');
-        $('#stylePercent').textContent = job.state === 'running' && job.total ? `${job.done} of ${job.total}` : '';
-        $('#styleFlavor').textContent = job.state === 'running' ? `${job.step || 'Warming up'}…` : (job.message || idle);
+        // The count is per step ("12 of 33 images"), so two passes over 33 images never read as 66 images.
+        $('#stylePercent').textContent = job.state === 'running' && job.step_total ? `${job.step_done} of ${job.step_total} images` : '';
+        const stage = job.steps > 1 && job.step_number ? `Step ${job.step_number} of ${job.steps}: ` : '';
+        $('#styleFlavor').textContent = job.state === 'running' ? `${stage}${job.step || 'Warming up'}…` : (job.message || idle);
     }
 
     function render() {

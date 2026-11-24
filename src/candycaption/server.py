@@ -810,7 +810,7 @@ async def rule_matches(body: dict = Body(...)):
 
 def _style_payload() -> dict[str, Any]:
     data = flavor.profile(project())
-    data["job"] = state.style_job.status() if state.style_job else {"state": "idle", "message": "", "step": "", "done": 0, "total": 0}
+    data["job"] = state.style_job.status() if state.style_job else {"state": "idle", "message": "", "step": "", "done": 0, "total": 0, "steps": 0, "step_number": 0, "step_done": 0, "step_total": 0}
     return data
 
 

@@ -192,6 +192,8 @@ async def test_checking_only_some_images_and_against_target_images(api, styled, 
     assert [t["rel"] for t in data["targets"]] == ["sketch (20).png", "sketch (21).png"]
     requests.clear()
     data = await run_style(api)
+    # One target has a note from the run above and the other still needs one; no other image needs any.
+    assert len(requests) == 1 + 1 + 18 and data["job"]["steps"] == 2
     card_request = next(r["body"] for r in requests if "You are given style notes" in str(r["body"]))
     assert str(card_request).count("pencil sketch") == 2 and "digital illustration" not in str(card_request["messages"][1])
     assert data["made"]["targets"] == 2 and sum(1 for r in data["rows"] if r["target"]) == 2
@@ -234,3 +236,16 @@ async def test_only_one_long_job_runs_at_a_time(api, styled, tmp_path):
         await server.state.runner.wait()
     finally:
         slow.should_exit = True
+
+
+async def test_targets_cost_one_request_per_image_not_one_per_target(api, styled, mock_url):
+    await api.post("/api/dataset/open", json={"path": str(styled)})
+    images = (await api.get("/api/dataset")).json()["images"]
+    await api.put("/api/style/targets", json={"ids": [images[0]["id"], images[1]["id"], images[2]["id"]]})
+    requests = mock_url[1].state.mock["requests"]
+    requests.clear()
+    data = await run_style(api)
+    # Three notes for the targets, one card, then twelve checks: not 12 x 3, and no notes for the other nine.
+    assert len(requests) == 3 + 1 + 12
+    assert data["checked"] == 12 and data["job"]["steps"] == 2 and data["job"]["step_total"] == 12
+    assert sum(1 for r in data["rows"] if r["note"]) == 3
