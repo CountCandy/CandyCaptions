@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,7 @@ HEALTH_CHECKS = {
     "near_duplicate": ("Near duplicate", "Twin Pack", "A resized or recompressed copy doubles its weight too."),
     "missing_files": ("Missing files", "Unwrapped", "An image without tags or a description trains on less."),
     "too_many_tokens": ("Too many tokens", "Overstuffed", "Tags plus description do not fit in the trainer's caption limit."),
+    "stale_caption": ("Old description", "Stale Wrapper", "The image was replaced after its description was written, so the description is about the old image. The next run rewrites it."),
     "name_clash": ("Name clash", "Mixed-Up Wrappers", "Two images with the same name would share one tag file and one description."),
 }
 
@@ -70,6 +72,12 @@ class Project:
     def has_caption(self, image: dict[str, Any]) -> bool:
         return self.caption_path(image).exists()
 
+    def caption_is_stale(self, image: dict[str, Any]) -> bool:
+        """True when the image file was replaced after its description was written."""
+        replaced_at = (image.get("health") or {}).get("replaced_at")
+        path = self.caption_path(image)
+        return bool(replaced_at) and path.exists() and path.stat().st_mtime < replaced_at
+
     def write_caption(self, image: dict[str, Any], text: str, reason: str) -> None:
         """Write <stem>_nl.txt (UTF-8), keeping the previous version in history."""
         path = self.caption_path(image)
@@ -106,7 +114,15 @@ class Project:
             if existing and existing["size"] == stat.st_size and existing["mtime"] == stat.st_mtime and existing["health"]:
                 continue
             image_id = existing["id"] if existing else self.store.add_image(rel)
-            self.store.update_image(image_id, size=stat.st_size, mtime=stat.st_mtime, **self._inspect(path))
+            info = self._inspect(path)
+            if existing and existing["sha"] and info["sha"] and existing["sha"] != info["sha"]:
+                # A different picture under the same name. Everything the store knew was about the
+                # old one, so forget it; a description still on disk is flagged until it is rewritten.
+                info["health"]["replaced_at"] = time.time()
+                self.store.update_image(image_id, status="pending", error=None, fields=None, caption=None, signals=None,
+                                        score=0, reviewed=0, note=None, raw=None, snapshot_id=None, run_id=None)
+                self.store.pin(image_id, False)
+            self.store.update_image(image_id, size=stat.st_size, mtime=stat.st_mtime, **info)
         self.store.mark_missing(present)
         images = self.store.images()
         self._pair_up(images)
@@ -201,6 +217,8 @@ class Project:
         missing = [name for name, path in wanted if not path.exists()]
         if missing:
             out.append({"check": "missing_files", "detail": "no " + " or ".join(missing) + " file"})
+        if self.caption_is_stale(image):
+            out.append({"check": "stale_caption", "detail": "the image was replaced after this description was written"})
         limit = int(app_settings.get("token_limit", 512))
         count = self.token_count(image, app_settings)
         if count > limit:

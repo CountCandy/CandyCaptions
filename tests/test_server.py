@@ -204,3 +204,50 @@ async def test_lists_sort_by_name_in_natural_order(api, dataset):
     assert by_name == ["clash.png", "plain.png", "ta (2).png", "ta (10).png", "ta (16).png", "unsure.png"]
     by_score = (await api.get("/api/review", params={"sort": "score"})).json()["rows"]
     assert [r["score"] for r in by_score] == sorted((r["score"] for r in by_score), reverse=True)
+
+
+async def test_an_image_replaced_under_the_same_name_starts_fresh(api, dataset, tmp_path):
+    await run_batch(api)
+    store = server.state.project.store
+    old = store.image_by_rel("plain.png")
+    await api.post("/api/test/pin", json={"id": old["id"], "pinned": True})
+    old_caption = (dataset / "plain_nl.txt").read_text()
+    old_thumb = await api.get(f"/api/image/{old['id']}")
+    assert (await api.get(f"/api/image/{old['id']}", headers={"If-None-Match": old_thumb.headers["etag"]})).status_code == 304
+
+    make_image(dataset / "plain.png", (10, 200, 240), size=(700, 1100))        # a new picture, same name
+    data = (await api.post("/api/dataset/rescan")).json()
+    fresh = store.image_by_rel("plain.png")
+    assert fresh["id"] == old["id"] and fresh["fields"] is None and fresh["status"] == "pending" and not fresh["note"]
+    assert (fresh["width"], fresh["height"]) == (700, 1100) and old["id"] not in store.testset()
+    badge = next(i for i in data["images"] if i["rel"] == "plain.png")["health"]
+    assert "stale_caption" in [b["check"] for b in badge]
+    new_thumb = await api.get(f"/api/image/{old['id']}", headers={"If-None-Match": old_thumb.headers["etag"]})
+    assert new_thumb.status_code == 200 and new_thumb.content != old_thumb.content      # the browser gets the new picture
+
+    # The next run rewrites the old description even with Overwrite off, and keeps the old one in history.
+    status = await run_batch(api)
+    assert status["done"] == 1 and status["skipped"] == 2
+    assert (dataset / "plain_nl.txt").read_text() != old_caption
+    assert store.history(old["id"])[0]["old"] == old_caption.strip()
+    assert store.image(old["id"])["status"] == "done" and store.image(old["id"])["fields"]
+    after = (await api.get("/api/dataset")).json()
+    assert "stale_caption" not in [b["check"] for i in after["images"] if i["rel"] == "plain.png" for b in i["health"]]
+
+    # Another folder with the same file names never shows this folder's pictures.
+    other = tmp_path / "other"
+    other.mkdir()
+    make_image(other / "clash.png", (250, 250, 0))
+    make_image(other / "plain.png", (0, 0, 0))
+    await api.post("/api/dataset/open", json={"path": str(other)})
+    there = await api.get("/api/image/1", headers={"If-None-Match": new_thumb.headers["etag"]})
+    assert there.status_code == 200 and there.headers["etag"] != new_thumb.headers["etag"]
+
+
+async def test_recent_folders_keep_the_last_five(api, tmp_path):
+    for n in range(7):
+        folder = tmp_path / f"set{n}"
+        folder.mkdir()
+        make_image(folder / "a.png")
+        recent = (await api.post("/api/dataset/open", json={"path": str(folder)})).json()["recent"]
+    assert len(recent) == 5 and recent[0].endswith("set6")

@@ -94,7 +94,7 @@ const FLAGS = {
 };
 const HEALTH_ICONS = {
     too_small: '▫', unreadable: '✗', sideways: '⟳', transparency: '◌', extreme_shape: '▭',
-    exact_duplicate: '⧉', near_duplicate: '≈', missing_files: '∅', too_many_tokens: '⇥', name_clash: '⚑',
+    stale_caption: '⌛', exact_duplicate: '⧉', near_duplicate: '≈', missing_files: '∅', too_many_tokens: '⇥', name_clash: '⚑',
 };
 
 function flagChip(signal, withPlain = true) {

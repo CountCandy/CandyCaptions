@@ -359,7 +359,7 @@ async def open_dataset(body: dict = Body(...)):
     state.project = proj
     state.runner = Runner(proj, load_settings(), publish=state.broadcaster.publish, image_base_url=state.base_url)
     settings = load_settings()
-    settings["recent"] = ([str(proj.folder)] + [r for r in settings.get("recent", []) if r != str(proj.folder)])[:8]
+    settings["recent"] = ([str(proj.folder)] + [r for r in settings.get("recent", []) if r != str(proj.folder)])[:5]
     save_settings(settings)
     return await asyncio.to_thread(dataset_payload)
 
@@ -447,7 +447,7 @@ def _clear_thumbs(proj: Project) -> None:
 
 
 def _thumb(proj: Project, image: dict[str, Any]) -> bytes:
-    cached = _thumb_dir(proj) / f"{image['id']}-{int(image['mtime'] or 0)}.jpg"
+    cached = _thumb_dir(proj) / f"{image['id']}-{int(image['mtime'] or 0)}-{image['size'] or 0}.jpg"
     if cached.exists():
         return cached.read_bytes()
     with Image.open(proj.path(image)) as opened:
@@ -460,20 +460,26 @@ def _thumb(proj: Project, image: dict[str, Any]) -> bytes:
 
 
 @app.get("/api/image/{image_id}")
-async def get_image(image_id: int, size: str = "thumb"):
+async def get_image(image_id: int, request: Request, size: str = "thumb"):
     proj = project()
     image = image_or_404(image_id)
+    ds = proj.store.settings()
+    # Image numbers start again in every dataset and a file can be replaced under the same name, so the
+    # browser must check back each time; the tag changes whenever the dataset or the file does.
+    etag = f'"{proj.id}-{image_id}-{int(image["mtime"] or 0)}-{image["size"] or 0}-{size}-{ds["background"]}-{ds["sampling"].get("long_side")}"'
+    headers = {"Cache-Control": "no-cache", "ETag": etag}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
     try:
         if size == "full":
-            return FileResponse(proj.path(image))
+            return FileResponse(proj.path(image), headers={"Cache-Control": "no-store"})
         if size == "prepared":
-            ds = proj.store.settings()
             data = await asyncio.to_thread(prepare_bytes, proj.path(image), int(ds["sampling"].get("long_side", 1536)), ds["background"])
         else:
             data = await asyncio.to_thread(_thumb, proj, image)
     except Exception:
         raise fail(415, "This image cannot be read.")
-    return Response(data, media_type="image/jpeg", headers={"Cache-Control": "max-age=60"})
+    return Response(data, media_type="image/jpeg", headers=headers)
 
 
 # -- run -------------------------------------------------------------------

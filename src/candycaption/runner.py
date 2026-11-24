@@ -165,7 +165,7 @@ class Runner:
             already = self.project.has_caption(image)
             if resume_run is not None and image.get("run_id") == resume_run and image["status"] == "done":
                 self.skipped += 1
-            elif already and not settings.get("overwrite"):
+            elif already and not settings.get("overwrite") and not self.project.caption_is_stale(image):
                 self.skipped += 1
             else:
                 todo.append(image)
