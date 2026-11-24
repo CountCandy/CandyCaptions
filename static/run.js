@@ -4,15 +4,16 @@
     const panel = $('#panel-run');
     const FLAVOR_MESSAGES = [
         'Melting the pixels into a smooth syrup…',
-        'Sorting the sprinkles by colour…',
+        'Sorting the sprinkles by color…',
         'Pulling the taffy on a long description…',
         'Tasting for sour notes…',
-        'Pressing the caption into its candy mould…',
+        'Pressing the caption into its candy mold…',
         'Putting a cherry on top…',
     ];
     const STAGES = { look: 'looking at the image', compose: 'writing the caption', check: 'Taste Check (field checks)' };
     let flavorTimer = null, flavorIdx = 0, crustWidth = 0;
     let misshapes = [];
+    let legendOpen = true;   // the flag legend starts open; it stays as you leave it
     const cards = {};   // image id -> { el, list, stage }
 
     const status = () => App.run || { state: 'idle', total: 0, done: 0, failed: 0, skipped: 0, in_flight: [], recent: [], message: '' };
@@ -130,6 +131,12 @@
             stat(running || s.state === 'pausing' ? (s.eta_seconds != null ? `~${formatDuration(s.eta_seconds)}` : 'tasting…') : '–', 'time remaining'),
             s.check_seconds ? stat(`${formatDuration(s.check_seconds)}`, `Taste Check time (${s.check_seconds_per_image}s per image)`) : null);
 
+        // Keep the legend open or closed as the user left it while the list below it refreshes.
+        const shown = $('.legend', live);
+        if (shown) legendOpen = shown.open;
+        const legend = flagLegend();
+        legend.open = legendOpen;
+        legend.style.marginBottom = '8px';
         const ids = new Set(s.in_flight.map((i) => String(i.id)));
         Object.keys(cards).forEach((id) => { if (!ids.has(id)) delete cards[id]; });
         live.replaceChildren(
@@ -138,9 +145,11 @@
                 h('div', { class: 'flight' }, s.in_flight.map(flightCard))) : null,
             s.recent.length ? h('div', { class: 'card' },
                 h('h2', { style: 'margin-bottom:6px' }, candy('Fresh off the line', 'recent captions')),
+                legend,
                 s.recent.map((item) => h('div', { class: 'recent-item', title: 'Open in the Sorting Table (review)', onclick: () => App.tabs.review.open(item.id) },
                     h('img', { src: thumbUrl(item.id) }),
-                    h('div', { style: 'min-width:0; flex:1' }, h('div', { class: 'spread' }, h('b', { style: 'font-size:12.5px' }, item.rel), flagIcons(item.flags)), h('p', null, item.caption))))) : null);
+                    h('div', { style: 'min-width:0; flex:1' }, h('div', { class: 'spread' }, h('b', { style: 'font-size:12.5px' }, item.rel),
+                        h('span', { class: 'chips' }, item.flags.length ? item.flags.map((f) => flagChip(f, false)) : h('span', { class: 'chip good', title: 'None of the four signals flagged this caption' }, '✓ no flags'))), h('p', null, item.caption))))) : null);
     }
 
     function render() {

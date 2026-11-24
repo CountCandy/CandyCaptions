@@ -51,7 +51,7 @@ async def run_bench(project: Project, app_settings: dict[str, Any], client: Mode
     return project.store.add_test_run(label, snapshot, results)
 
 
-def summarise(run: dict[str, Any]) -> dict[str, Any]:
+def summarize(run: dict[str, Any]) -> dict[str, Any]:
     verdicts = [v for r in run["results"] for v in r.get("verdicts") or []]
     return {
         "id": run["id"], "label": run["label"], "created": run["created"],

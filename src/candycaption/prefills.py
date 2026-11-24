@@ -19,11 +19,11 @@ from .config import load_json, save_json
 BASE_FIELDS = [
     ("quality", "Quality", "finish (rough sketch or finished piece) and any defect that is plain to see, "
                            "such as a watermark, signature, heavy compression blocks or blur; say \"no visible defects\" when there are none"),
-    ("style", "Style and medium", "medium (digital, pencil, paint, 3D, photo), line work, colour, shading"),
+    ("style", "Style and medium", "medium (digital, pencil, paint, 3D, photo), line work, color, shading"),
     ("camera", "Camera and framing", "close-up, upper body or full body; angle from above, below or behind; depth of field"),
     ("subjects", "Subjects", "how many and what: solo, two girls and a cat"),
     ("appearance", "Appearance", "hair, eyes, skin, body, ears, tail, wings"),
-    ("clothing", "Clothing and accessories", "outfit and colours"),
+    ("clothing", "Clothing and accessories", "outfit and colors"),
     ("expression", "Expression and gaze", "facial expression, where they are looking"),
     ("action", "Action and pose", "what they are doing, pose, held objects"),
     ("setting", "Setting and background", "place, props, simple or detailed background"),
@@ -51,6 +51,7 @@ LOOK_PROMPT = (
 )
 
 COMMON_RULES = [
+    "Write in American English.",
     "Describe only what is visible. Never guess names, series, artists or intent.",
     "The tags come from an automatic tagger and can be wrong. When a tag and the image disagree, the image wins.",
     "If a field has nothing to report, write \"none\".",
@@ -58,14 +59,14 @@ COMMON_RULES = [
     "Report a defect only when you can point to where it is in the image. Soft focus, fog, depth of field, film grain "
     "and dithered shading are part of the picture, not defects.",
     "Transcribe visible text exactly, in quotes, keeping line breaks.",
-    "Describe nudity plainly and factually, with no euphemism, judgement or qualifiers such as \"artistic\" "
+    "Describe nudity plainly and factually, with no euphemism, judgment or qualifiers such as \"artistic\" "
     "or \"tasteful\", and never explain it by art style, period or medium.",
 ]
 
 COMPOSE_PROMPT = (
     "Turn the notes into one paragraph that describes the image, {min_words} to {max_words} words long. "
     "Follow the order of the notes. Use plain declarative sentences. Use only what the notes state, and keep "
-    "their concrete details (colours, counts, objects, expressions, what is where); when space is short, cut "
+    "their concrete details (colors, counts, objects, expressions, what is where); when space is short, cut "
     "filler words before you cut a fact. "
     "skip any note that says \"none\". Do not mention notes, fields or tags. Reply with the paragraph only."
 )
@@ -99,7 +100,7 @@ DEFAULT_PREFILLS: list[dict[str, Any]] = [
         "look_prompt": LOOK_PROMPT,
         "compose_prompt": COMPOSE_PROMPT,
         "rules": list(COMMON_RULES),
-        "caption_rules": ["Never mention the art style, medium, line work, colouring or rendering."],
+        "caption_rules": ["Never mention the art style, medium, line work, coloring or rendering."],
         "fields": _fields({
             "quality": {"caption_note": "mention defects only; skip this note if it reports none"},
             "style": {"in_caption": False},
@@ -114,7 +115,7 @@ DEFAULT_PREFILLS: list[dict[str, Any]] = [
         "look_prompt": LOOK_PROMPT,
         "compose_prompt": COMPOSE_PROMPT,
         "rules": list(COMMON_RULES),
-        "caption_rules": ["Do not describe the character's fixed traits (face, hair, eye colour, body). "
+        "caption_rules": ["Do not describe the character's fixed traits (face, hair, eye color, body). "
                           "Only mention appearance that differs from their usual look."],
         "fields": _fields({
             "appearance": {"caption_note": "only changes from the character's usual look; skip the fixed traits"},
@@ -153,10 +154,26 @@ DEFAULT_PRESETS: list[dict[str, Any]] = [
 
 # -- storage ---------------------------------------------------------------
 
+_SPELLING = [("colour", "color"), ("Colour", "Color"), ("judgement", "judgment"), ("flavour", "flavor")]
+
+
+def _american(value: Any) -> Any:
+    """Recipes saved before the app switched to American spelling get the same change."""
+    if isinstance(value, str):
+        for old, new in _SPELLING:
+            value = value.replace(old, new)
+        return value
+    if isinstance(value, list):
+        return [_american(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _american(v) for k, v in value.items()}
+    return value
+
 def load_prefills() -> list[dict[str, Any]]:
     saved = load_json("prefills.json", None)
     if not saved:
         return copy.deepcopy(DEFAULT_PREFILLS)
+    saved = _american(saved)
     ids = {p["id"] for p in saved}
     return saved + [copy.deepcopy(p) for p in DEFAULT_PREFILLS if p["id"] not in ids]
 

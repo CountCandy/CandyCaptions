@@ -25,7 +25,7 @@ from PIL import Image
 
 from . import tokens
 from .backends import BACKENDS, effective_caps
-from .client import ModelClient, ModelServerError, normalise_base_url
+from .client import ModelClient, ModelServerError, normalize_base_url
 from .config import STATIC_DIR, data_dir, load_settings, save_settings
 from .connect import test_connection
 from .dataset import HEALTH_CHECKS, Project
@@ -36,7 +36,7 @@ from .prefills import (BASE_FIELDS, DEFAULT_SAMPLING, default_prefill, get_prefi
                        save_prefills, save_presets)
 from .runner import Broadcaster, Runner
 from .signals import combine
-from .testbench import promote, request_preview, run_bench, summarise
+from .testbench import promote, request_preview, run_bench, summarize
 from .wordlists import DEFAULT_WORDLISTS, load_wordlists, save_wordlists
 
 logger = logging.getLogger(__name__)
@@ -157,7 +157,7 @@ async def put_settings(body: dict = Body(...)):
     for key, value in body.items():
         if key in settings and key != "caps":
             settings[key] = value
-    settings["base_url"] = normalise_base_url(settings["base_url"])
+    settings["base_url"] = normalize_base_url(settings["base_url"])
     if connection_changed:
         settings["caps"] = {}  # what one server supports says nothing about another
     save_settings(settings)
@@ -778,7 +778,7 @@ def bench_payload() -> dict[str, Any]:
         image = proj.store.image(image_id)
         if image and not image["missing"]:
             pins.append({"id": image_id, "rel": image["rel"], "facts": facts})
-    return {"pins": pins, "runs": [summarise(r) for r in proj.store.test_runs()], "busy": state.bench_busy}
+    return {"pins": pins, "runs": [summarize(r) for r in proj.store.test_runs()], "busy": state.bench_busy}
 
 
 @app.get("/api/test")
@@ -832,7 +832,7 @@ async def bench_run_detail(run_id: int):
         for reason in result.get("reasons") or []:
             reason["field_name"] = names.get(reason.get("field"))
         result.pop("signals", None)
-    return {**run, "summary": summarise(run)}
+    return {**run, "summary": summarize(run)}
 
 
 @app.post("/api/test/request")

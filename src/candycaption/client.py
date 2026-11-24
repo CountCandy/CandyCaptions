@@ -111,7 +111,7 @@ def _has_image(messages: list[dict[str, Any]]) -> bool:
     )
 
 
-def normalise_base_url(url: str) -> str:
+def normalize_base_url(url: str) -> str:
     """Accept a bare server address: http://127.0.0.1:1234 means http://127.0.0.1:1234/v1."""
     url = url.strip().rstrip("/")
     if url and "://" not in url:
@@ -125,7 +125,7 @@ class ModelClient:
     def __init__(self, settings: dict[str, Any], transport: httpx.AsyncBaseTransport | None = None):
         self.settings = settings
         self.backend = settings.get("backend", "other")
-        self.base_url = normalise_base_url(settings.get("base_url") or "")
+        self.base_url = normalize_base_url(settings.get("base_url") or "")
         self.caps = effective_caps(settings)
         headers = {}
         if settings.get("api_key"):

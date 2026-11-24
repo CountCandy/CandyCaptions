@@ -15,7 +15,7 @@ from .config import load_json, save_json
 
 DEFAULT_WORDLISTS: dict[str, Any] = {
     "categories": {
-        "colours": [
+        "colors": [
             ["red", "crimson", "scarlet", "ruby"],
             ["orange", "amber"],
             ["yellow", "golden", "gold", "blonde", "blond"],
@@ -27,7 +27,7 @@ DEFAULT_WORDLISTS: dict[str, Any] = {
             ["brown", "brunette", "chestnut", "auburn", "tan"],
             ["black"],
             ["white"],
-            ["grey", "gray", "silver"],
+            ["gray", "grey", "silver"],
         ],
         "counts": [
             ["one", "1", "single", "solo", "alone"],
@@ -57,7 +57,7 @@ DEFAULT_WORDLISTS: dict[str, Any] = {
         ],
     },
     "tag_map": {
-        # <colour>_<attribute> tags are checked against the words near these nouns.
+        # <color>_<attribute> tags are checked against the words near these nouns.
         "attributes": {
             "hair": {"field": "appearance", "nouns": ["hair", "ponytail", "twintails", "braid", "braids", "bangs"]},
             "eyes": {"field": "appearance", "nouns": ["eyes", "eye"]},
@@ -84,8 +84,8 @@ DEFAULT_WORDLISTS: dict[str, Any] = {
             "swimsuit": {"field": "clothing", "nouns": ["swimsuit"]},
             "kimono": {"field": "clothing", "nouns": ["kimono", "yukata"]},
         },
-        # Booru colour words that are not in the colours list under the same spelling.
-        "colour_aliases": {"blonde": "yellow", "gray": "grey", "silver": "grey", "aqua": "aqua", "light_brown": "brown",
+        # Booru color words that are not in the colors list under the same spelling.
+        "color_aliases": {"blonde": "yellow", "grey": "gray", "silver": "gray", "aqua": "aqua", "light_brown": "brown",
                            "dark_blue": "blue", "light_blue": "blue", "dark_green": "green", "light_purple": "purple"},
         # Count tags are checked against number words in the Subjects field.
         "counts": {
@@ -109,6 +109,11 @@ def load_wordlists() -> dict[str, Any]:
     saved = load_json("wordlists.json", None)
     if not isinstance(saved, dict) or "categories" not in saved or "tag_map" not in saved:
         return copy.deepcopy(DEFAULT_WORDLISTS)
+    # Lists saved before the app switched to American spelling.
+    if "colours" in saved["categories"]:
+        saved["categories"]["colors"] = saved["categories"].pop("colours")
+    if "colour_aliases" in saved["tag_map"]:
+        saved["tag_map"]["color_aliases"] = saved["tag_map"].pop("colour_aliases")
     return saved
 
 

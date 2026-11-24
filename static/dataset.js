@@ -107,7 +107,7 @@
                     h('input', { type: 'checkbox', checked: s.recursive, onchange: (e) => act(null, async () => { await api('/api/dataset/settings', 'PUT', { recursive: e.target.checked }); await reload(); }) }), 'Include subfolders'),
                 h('label', { style: 'margin:0 0 0 14px' }, 'Size floor (megapixels)'),
                 h('input', { type: 'number', step: 0.05, min: 0, max: 4, value: s.min_area_mp, style: 'width:90px', onchange: (e) => act(null, async () => { await api('/api/dataset/settings', 'PUT', { min_area_mp: Number(e.target.value) }); await reload(); }) }),
-                h('label', { style: 'margin:0 0 0 14px', title: 'Used to fill see-through areas, both for the captioner and for the one-click fix' }, 'Background colour'),
+                h('label', { style: 'margin:0 0 0 14px', title: 'Used to fill see-through areas, both for the captioner and for the one-click fix' }, 'Background color'),
                 h('input', { type: 'color', value: s.background, onchange: (e) => act(null, async () => { await api('/api/dataset/settings', 'PUT', { background: e.target.value }); await reload(); }) })),
             h('p', { class: 'hint', style: 'margin-top:8px' }, 'Token counts use: ', d.tokenizer.source, d.tokenizer.exact ? '.' : '. Set a tokenizer in the Candy Shop tab for exact counts.'));
     }

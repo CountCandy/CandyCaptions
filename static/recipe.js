@@ -36,10 +36,10 @@ function renderRecipe(container) {
     const profile = App.backends[App.settings.backend] || { sampling: [] };
     const prefill = App.prefills.find((p) => p.id === settings.prefill_id) || App.prefills[0];
     const rerender = () => renderRecipe(container);
-    const honoured = (name) => !name || profile.sampling.includes(name);
+    const honored = (name) => !name || profile.sampling.includes(name);
 
     const slider = ([key, label, min, max, step, needs, note]) => {
-        const off = !honoured(needs);
+        const off = !honored(needs);
         const number = h('input', { type: 'number', min, max, step, value: settings.sampling[key], disabled: off });
         const range = h('input', { type: 'range', min, max, step, value: settings.sampling[key], disabled: off });
         const set = (value) => {
@@ -50,7 +50,7 @@ function renderRecipe(container) {
         };
         range.oninput = () => set(range.value);
         number.onchange = () => set(number.value);
-        return h('div', { class: 'slider-row' + (off ? ' greyed' : ''), title: off ? `${profile.name} ignores this setting, so it is not sent` : note },
+        return h('div', { class: 'slider-row' + (off ? ' grayed' : ''), title: off ? `${profile.name} ignores this setting, so it is not sent` : note },
             h('span', null, label), range, number);
     };
 
@@ -103,8 +103,8 @@ function renderRecipe(container) {
                 SLIDERS.map(slider),
                 h('div', { class: 'slider-row' }, h('span', null, 'Seed'),
                     h('span', { class: 'hint' }, 'fixed, so test runs can be compared'),
-                    h('input', { type: 'number', value: settings.sampling.seed, disabled: !honoured('seed'), onchange: (e) => patchDataset({ sampling: { seed: Number(e.target.value) || 0 } }) })),
-                h('label', { class: 'check' + (profile.thinking ? '' : ' greyed'), title: profile.thinking ? '' : `${profile.name} does not take this setting per request. Turn thinking off in the model's own settings there.` },
+                    h('input', { type: 'number', value: settings.sampling.seed, disabled: !honored('seed'), onchange: (e) => patchDataset({ sampling: { seed: Number(e.target.value) || 0 } }) })),
+                h('label', { class: 'check' + (profile.thinking ? '' : ' grayed'), title: profile.thinking ? '' : `${profile.name} does not take this setting per request. Turn thinking off in the model's own settings there.` },
                     h('input', { type: 'checkbox', checked: settings.sampling.thinking, disabled: !profile.thinking, onchange: (e) => patchDataset({ sampling: { thinking: e.target.checked } }) }),
                     'Thinking', h('span', { class: 'plain' }, 'slower, rarely helps captions')))));
 }

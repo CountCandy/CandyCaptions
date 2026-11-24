@@ -8,7 +8,7 @@
     let chatOpen = false;
 
     const QUICK = [
-        ['Wrong colour', 'The  is , not .'],
+        ['Wrong color', 'The  is , not .'],
         ['Wrong count', 'There are , not .'],
         ['Missed something', 'You missed: '],
         ['Too long', 'Too long. Keep only the essentials in each field.'],
@@ -239,8 +239,8 @@
                     }),
                     h('span', { class: 'p' + (p != null && p < 0.6 ? ' low' : ''), title: p != null ? `Taste Check (field check): probability the ${checks.measured ? '' : 'plain yes/no '}answer is yes` : '' }, p != null ? `${Math.round(p * 100)}% yes` : '')),
                 wavered.length ? h('div', { class: 'field-row', style: 'margin-top:-4px' }, h('span'),
-                    h('span', { class: 'hint' }, markWords(value, wavered.map((u) => u.word)), ' · wavered: ',
-                        wavered.map((u) => `${u.word} ${Math.round(u.p * 100)}% / ${u.alts.map((a) => `${a.word} ${Math.round(a.p * 100)}%`).join(' / ')}`).join('; ')), h('span')) : null,
+                    h('span', { class: 'hint' }, markWavered(value, wavered), h('br'),
+                        wavered.map((u) => `Wrote "${u.word}" (${Math.round(u.p * 100)}%) but nearly wrote ${u.alts.map((a) => `"${a.word}" (${Math.round(a.p * 100)}%)`).join(' or ')}`).join('. '), '. Check the marked word.'), h('span')) : null,
             ];
         });
 
@@ -331,7 +331,8 @@
                         chip.onclick = () => applyFilter(query.trim() === `signal:${signal}` ? '' : `signal:${signal}`);
                         return chip;
                     })),
-                h('p', { class: 'hint', id: 'reviewTotals', style: 'margin-bottom:8px' }),
+                flagLegend(),
+                h('p', { class: 'hint', id: 'reviewTotals', style: 'margin:8px 0' }),
                 h('div', { class: 'queue', id: 'reviewQueue' })),
             h('div', { id: 'reviewDetail' })));
         renderList();

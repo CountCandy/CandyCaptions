@@ -61,8 +61,12 @@ def build_snapshot(project: Project, app_settings: dict[str, Any]) -> dict[str, 
     }
 
 
-def clean_caption(text: str) -> str:
+def clean_caption(text: str, cut_off: bool = False) -> str:
     text = " ".join(text.split())
+    if cut_off and text and text[-1] not in ".!?\"'":
+        # The reply hit the token limit mid-sentence: keep only the complete sentences.
+        end = max(text.rfind(". "), text.rfind("! "), text.rfind("? "))
+        text = text[:end + 1] if end > 0 else text
     if len(text) > 1 and text[0] == text[-1] and text[0] in "\"'":
         text = text[1:-1].strip()
     return text
@@ -122,16 +126,17 @@ class Captioner:
         if not caption_fields(self.prefill, fields):
             raise CaptionError("No field has anything to put in a caption.")
         sampling = self.snapshot["sampling"]
-        limit = sampling.get("max_tokens_compose", 200)
+        # Room for the longest caption the recipe asks for (about 1.4 tokens a word), with a margin.
+        limit = max(int(sampling.get("max_tokens_compose", 200)), int(self.prefill.get("max_words", 70) * 1.8) + 40)
         started = time.monotonic()
         reply = await self.client.complete(self.snapshot["model"], compose_messages(self.snapshot, fields),
                                            sampling=sampling, max_tokens=limit)
-        caption = clean_caption(reply.text)
+        caption = clean_caption(reply.text, reply.cut_off)
         hits = find_banned(caption, self.prefill.get("banned_words") or [])
         if hits or not caption:
             again = await self.client.complete(self.snapshot["model"], compose_messages(self.snapshot, fields, hits or None),
                                                sampling=sampling, max_tokens=limit)
-            second = clean_caption(again.text)
+            second = clean_caption(again.text, again.cut_off)
             if second and (not caption or len(find_banned(second, self.prefill.get("banned_words") or [])) < len(hits)):
                 caption = second
             reply = again if not caption else reply

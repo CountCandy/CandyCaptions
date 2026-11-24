@@ -57,7 +57,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "tokenizer_repo": "Qwen/Qwen3.5-27B",
     "token_limit": 512,
     "score_weights": {"uncertain": 0.3, "checks": 0.4, "tags": 0.2, "template": 0.1},
-    "uncertain_min_alt": 0.15,
+    "settings_version": 2,
+    "uncertain_min_alt": 0.25,
     "check_threshold": 0.6,
     "recent": [],
     # Where the folder picker opens, so it does not start from the drive list every time.
@@ -73,6 +74,11 @@ def load_settings() -> dict[str, Any]:
             settings[key].update(value)
         else:
             settings[key] = value
+    if saved and saved.get("settings_version", 1) < 2:
+        # The first default flagged a word when an alternative reached 15%, which flagged too much.
+        if settings.get("uncertain_min_alt") == 0.15:
+            settings["uncertain_min_alt"] = 0.25
+        settings["settings_version"] = 2
     return settings
 
 

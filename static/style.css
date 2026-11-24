@@ -95,7 +95,7 @@
 }
 
 
-/* Flag and badge accents. Each flag also carries an icon, so none relies on colour alone. */
+/* Flag and badge accents. Each flag also carries an icon, so none relies on color alone. */
 :root, [data-theme] {
     --flag-uncertain: #ff7cc0;
     --flag-checks: #5eead4;
@@ -251,7 +251,7 @@ details[open] > summary { color: var(--text-primary); }
 .findings li::before { position: absolute; left: 2px; content: "•"; color: var(--text-muted); }
 .findings li.yes::before { content: "✓"; color: var(--ok); font-weight: 700; }
 .findings li.no::before { content: "✗"; color: var(--error-text); font-weight: 700; }
-.greyed { opacity: 0.45; }
+.grayed { opacity: 0.45; }
 
 /* Toasts */
 .toast-container { position: fixed; top: 18px; right: 18px; z-index: 100; display: flex; flex-direction: column; gap: 8px; max-width: 420px; }
@@ -262,7 +262,7 @@ details[open] > summary { color: var(--text-primary); }
 .toast.error { border-color: var(--error-border); color: var(--error-text); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-6px); } }
 
-/* Chips: flags and health badges. Icon plus text, never colour alone. */
+/* Chips: flags and health badges. Icon plus text, never color alone. */
 .chip {
     display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; font-size: 11.5px;
     border: 1px solid currentColor; white-space: nowrap; font-weight: 600; background: rgba(0, 0, 0, 0.12);
@@ -396,3 +396,7 @@ pre.payload { max-height: 60vh; overflow: auto; padding: 12px; border-radius: 8p
 .slider-row { display: grid; grid-template-columns: 130px 1fr 64px; gap: 10px; align-items: center; margin-bottom: 7px; font-size: 13px; }
 .slider-row output { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
 .slider-row input[type="number"] { padding: 5px 8px; }
+
+.legend { font-size: 12.5px; }
+.legend table { margin: 4px 0; }
+.legend td { border: none; padding: 4px 8px 4px 0; color: var(--text-secondary); }

@@ -61,10 +61,10 @@ def settings(mock_url):
     return values
 
 
-def make_image(path, colour=(200, 60, 60), size=(900, 900), tags=None, mode="RGB"):
-    fill = colour + ((255,) if mode == "RGBA" else ())
+def make_image(path, color=(200, 60, 60), size=(900, 900), tags=None, mode="RGB"):
+    fill = color + ((255,) if mode == "RGBA" else ())
     img = Image.new(mode, size, fill)
-    ImageDraw.Draw(img).rectangle([size[0] // 4, size[1] // 4, size[0] // 2, size[1] // 2], fill=tuple(255 - c for c in colour))
+    ImageDraw.Draw(img).rectangle([size[0] // 4, size[1] // 4, size[0] // 2, size[1] // 2], fill=tuple(255 - c for c in color))
     img.save(path)
     if tags is not None:
         path.with_suffix(".txt").write_text(tags, encoding="utf-8")

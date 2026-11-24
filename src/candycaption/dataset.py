@@ -20,7 +20,7 @@ HEALTH_CHECKS = {
     "too_small": ("Too small", "Fun Size", "BluFlow can drop sources below its size floor."),
     "unreadable": ("Unreadable", "Crushed", "A broken file stops latent caching."),
     "sideways": ("Sideways", "Tipped Over", "The file stores its pixels rotated and BluFlow ignores the flag that says how to turn them."),
-    "transparency": ("Transparency", "Clear Wrapper", "BluFlow drops transparency without filling it, so see-through areas train as whatever colour is hidden under them."),
+    "transparency": ("Transparency", "Clear Wrapper", "BluFlow drops transparency without filling it, so see-through areas train as whatever color is hidden under them."),
     "extreme_shape": ("Extreme shape", "Candy Cane", "Very wide or tall images get cropped or shrunk hard in buckets."),
     "exact_duplicate": ("Exact duplicate", "Double Wrapped", "The same image twice doubles its weight."),
     "near_duplicate": ("Near duplicate", "Twin Pack", "A resized or recompressed copy doubles its weight too."),
@@ -40,6 +40,7 @@ class Project:
         self._pairs: dict[str, list[tuple[str, str]]] = {}  # image rel -> [(check, other rel)]
         self._token_cache: dict[str, int] = {}
         self.expect_captions = False
+        self.expect_tags = False
 
     # -- paths and files ----------------------------------------------------
 
@@ -115,6 +116,8 @@ class Project:
     def refresh_expectations(self, images: list[dict[str, Any]] | None = None) -> None:
         images = images if images is not None else self.store.images()
         self.expect_captions = any(self.has_caption(image) for image in images)
+        # A folder with no tag files at all is a dataset without tags, not one with tags missing.
+        self.expect_tags = any(self.tags_path(image).exists() for image in images)
 
     @staticmethod
     def _inspect(path: Path) -> dict[str, Any]:
@@ -191,8 +194,8 @@ class Project:
             out.append({"check": "extreme_shape", "detail": f"aspect ratio {width}:{height} is outside 1:3 to 3:1"})
         for check, other in self._pairs.get(image["rel"], []):
             out.append({"check": check, "detail": f"matches {other}"})
-        # A missing description only counts once captioning has started in this folder.
-        wanted = [("tags", self.tags_path(image))]
+        # A missing file only counts once this folder has that kind of file at all.
+        wanted = [("tags", self.tags_path(image))] if self.expect_tags else []
         if self.expect_captions:
             wanted.append(("description", self.caption_path(image)))
         missing = [name for name, path in wanted if not path.exists()]

@@ -46,7 +46,7 @@
                     }, Object.entries(App.backends).map(([id, b]) => h('option', { value: id, selected: id === s.backend }, b.name)))),
                 h('div', { class: 'field' }, h('label', null, 'Base URL'),
                     h('input', { type: 'text', value: s.base_url, onchange: (e) => act(null, () => { findings = null; return save({ base_url: e.target.value.trim() }).then(render); }) }))),
-            h('div', { class: 'field' + (profile.api_key === 'none' ? ' greyed' : '') },
+            h('div', { class: 'field' + (profile.api_key === 'none' ? ' grayed' : '') },
                 h('label', null, 'API key', h('span', { class: 'plain' }, profile.api_key === 'required' ? 'required by this backend' : profile.api_key === 'none' ? 'not used by this backend' : 'optional')),
                 h('input', { type: 'password', value: s.api_key, placeholder: profile.api_key === 'required' ? 'sk-unsloth-…' : '', onchange: (e) => act(null, () => save({ api_key: e.target.value.trim() })) })),
             h('div', { class: 'grid2' },
@@ -69,18 +69,18 @@
                 findings.map((line) => h('li', { class: line.ok === true ? 'yes' : line.ok === false ? 'no' : '' }, line.text))) : null,
             profile.notes ? h('p', { class: 'hint', style: 'margin-top:12px' }, profile.notes) : null);
 
-        const honours = h('div', { class: 'card' },
-            h('h2', null, 'What this server honours'),
-            h('p', { class: 'hint', style: 'margin-bottom:10px' }, 'A setting the backend ignores is greyed out here and in the sampling controls, and is never sent.'),
+        const honors = h('div', { class: 'card' },
+            h('h2', null, 'What this server honors'),
+            h('p', { class: 'hint', style: 'margin-bottom:10px' }, 'A setting the backend ignores is grayed out here and in the sampling controls, and is never sent.'),
             h('div', { class: 'chips' }, SAMPLING.map((name) => {
                 const yes = (profile.sampling || []).includes(name) && (name !== 'thinking' || profile.thinking);
-                return h('span', { class: 'chip ' + (yes ? 'good' : 'neutral greyed'), title: yes ? 'sent' : 'not sent to this backend' }, yes ? '✓' : '–', ' ', name);
+                return h('span', { class: 'chip ' + (yes ? 'good' : 'neutral grayed'), title: yes ? 'sent' : 'not sent to this backend' }, yes ? '✓' : '–', ' ', name);
             })),
             h('p', { style: 'margin-top:12px' }, 'Token probabilities: ',
                 probs ? h('span', { class: 'chip good' }, '✓ ', probs) : h('span', { class: 'chip neutral' }, '– ', caps.tested ? 'not available' : 'not tested yet')),
             h('p', { class: 'hint', style: 'margin-top:6px' }, probs
-                ? 'Mixed Flavours (uncertain words) and measured Taste Check (field check) scores are on.'
-                : 'Without them, Mixed Flavours (uncertain words) is off and Taste Check (field checks) falls back to plain yes or no.'));
+                ? 'Mixed Flavors (uncertain words) and measured Taste Check (field check) scores are on.'
+                : 'Without them, Mixed Flavors (uncertain words) is off and Taste Check (field checks) falls back to plain yes or no.'));
 
         const tokenizerStatus = h('span', { class: 'hint' }, 'checking…');
         api('/api/tokenizer').then((t) => {
@@ -110,7 +110,7 @@
                 h('div', { class: 'field' }, h('label', null, 'Flag a field when "yes" falls below', h('span', { class: 'plain' }, 'probability')),
                     h('input', { type: 'number', step: 0.05, min: 0.05, max: 0.95, value: s.check_threshold, onchange: (e) => act(null, () => save({ check_threshold: Number(e.target.value) })) }))));
 
-        panel.replaceChildren(h('div', { class: 'grid2' }, h('div', null, server), h('div', null, honours, tokenizer, advanced)));
+        panel.replaceChildren(h('div', { class: 'grid2' }, h('div', null, server), h('div', null, honors, tokenizer, advanced)));
     }
 
     App.tabs.connect = { show: render };

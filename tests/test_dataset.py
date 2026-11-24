@@ -65,7 +65,7 @@ def test_fixes_keep_a_backup_and_match_what_the_trainer_sees(dataset):
     project.scan()
     settings = dict(load_settings(), tokenizer_repo="")
 
-    # The captioner already sees transparency filled with the background colour (white by default).
+    # The captioner already sees transparency filled with the background color (white by default).
     seen = Image.open(__import__("io").BytesIO(prepare_bytes(dataset / "clear.png", 512, "#ffffff")))
     assert seen.getpixel((10, 10))[0] > 250
 
@@ -102,3 +102,20 @@ def test_find_and_replace_previews_then_keeps_history(dataset):
     image = project.store.image(changes[0]["id"])
     assert project.read_caption(image).startswith("A woman")
     assert project.store.history(image["id"])[0]["reason"] == "find and replace"
+
+
+def test_a_dataset_without_any_tag_files_is_not_covered_in_missing_file_badges(tmp_path):
+    folder = tmp_path / "tagless"
+    folder.mkdir()
+    for n in range(3):
+        make_image(folder / f"img{n}.png", (n * 60, 90, 120))
+    project = Project(folder)
+    project.scan()
+    settings = dict(load_settings(), tokenizer_repo="")
+    (folder / "img0_nl.txt").write_text("A caption.")
+    project.refresh_expectations()
+    assert "missing_files" not in checks(project, "img0.png", settings)
+    assert "missing_files" in checks(project, "img1.png", settings)          # captioning has started; this one has none
+    (folder / "img0.txt").write_text("1girl")
+    project.refresh_expectations()
+    assert "missing_files" in checks(project, "img2.png", settings)

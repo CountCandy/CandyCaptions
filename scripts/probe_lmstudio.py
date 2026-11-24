@@ -32,8 +32,8 @@ from PIL import Image, ImageDraw
 
 from candycaption.imaging import tiny_test_image
 
-SCHEMA = {"type": "object", "properties": {"colours": {"type": "string"}, "count": {"type": "string"}},
-          "required": ["colours", "count"], "additionalProperties": False}
+SCHEMA = {"type": "object", "properties": {"colors": {"type": "string"}, "count": {"type": "string"}},
+          "required": ["colors", "count"], "additionalProperties": False}
 report: dict[str, Any] = {}
 
 
@@ -112,7 +112,7 @@ def big_image(side: int) -> str:
 def check_responses_image(server: Server) -> None:
     print("\n1. /v1/responses with an image")
     image = tiny_test_image()
-    question = {"type": "input_text", "text": "Name the two colours of the squares in a few words."}
+    question = {"type": "input_text", "text": "Name the two colors of the squares in a few words."}
     status, data, text, _ = server.responses([question, {"type": "input_image", "image_url": image}], max_output_tokens=24)
     ok = status == 200 and bool(text)
     report["responses_base64_image"] = {"works": ok, "status": status, "answer": text, "error": error_of(data)}
@@ -138,7 +138,7 @@ def check_responses_settings(server: Server) -> None:
         found[name] = {"accepted": status == 200, "error": error_of(data)}
         say("✓" if status == 200 else "✗", f"{name}: {'accepted' if status == 200 else f'refused ({status}) {error_of(data)}'}")
 
-    # Accepted is not the same as honoured, so measure the ones that can be measured.
+    # Accepted is not the same as honored, so measure the ones that can be measured.
     def sample(**extra: Any) -> str:
         return server.responses(prompt, max_output_tokens=40, temperature=1.2, **extra)[2]
 
@@ -150,12 +150,12 @@ def check_responses_settings(server: Server) -> None:
                                     f"another seed gave {'different' if a != c else 'the same'} text")
     if found["top_k"]["accepted"]:
         a, b = sample(top_k=1, seed=1), sample(top_k=1, seed=2)
-        found["top_k"]["honoured"] = a == b
+        found["top_k"]["honored"] = a == b
         say("✓" if a == b else "–", f"top_k: top_k=1 with two seeds gave {'the same' if a == b else 'different'} text")
     status, data, text, _ = server.responses("Count from 1 to 200, separated by spaces.", max_output_tokens=8)
     used = (data.get("usage") or {}).get("output_tokens")
-    found["max_output_tokens"]["honoured"] = used is not None and used <= 10
-    say("✓" if found["max_output_tokens"]["honoured"] else "–", f"max_output_tokens=8 produced {used} tokens")
+    found["max_output_tokens"]["honored"] = used is not None and used <= 10
+    say("✓" if found["max_output_tokens"]["honored"] else "–", f"max_output_tokens=8 produced {used} tokens")
     report["responses_sampling"] = found
 
     fmt = {"format": {"type": "json_schema", "name": "probe", "schema": SCHEMA, "strict": True}}
@@ -164,7 +164,7 @@ def check_responses_settings(server: Server) -> None:
         max_output_tokens=60, text=fmt)
     try:
         parsed = json.loads(text)
-        ok = status == 200 and set(parsed) == {"colours", "count"}
+        ok = status == 200 and set(parsed) == {"colors", "count"}
     except ValueError:
         ok = False
     report["responses_json_schema"] = {"works": ok, "status": status, "reply": text[:200], "error": error_of(data)}
@@ -194,7 +194,7 @@ def check_probabilities(server: Server) -> None:
     both = status == 200 and bool(logprobs) and text.startswith("{")
     report["responses_image_schema_logprobs_together"] = {"works": both, "status": status, "error": error_of(data)}
     say("✓" if both else "✗", "image + JSON schema + probabilities in one /v1/responses request: "
-        + ("works, so Mixed Flavours (uncertain words) can run on LM Studio" if both else f"does not work ({status}) {error_of(data)}"))
+        + ("works, so Mixed Flavors (uncertain words) can run on LM Studio" if both else f"does not work ({status}) {error_of(data)}"))
 
 
 # -- 4. context across parallel requests -----------------------------------

@@ -1,7 +1,7 @@
 """Image preparation: show the model what the trainer will see.
 
 Images are turned upright (EXIF) and any transparency is filled with the
-dataset's background colour before they are downscaled and sent.
+dataset's background color before they are downscaled and sent.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ Image.MAX_IMAGE_PIXELS = None
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 
 
-def parse_colour(value: str) -> tuple[int, int, int]:
+def parse_color(value: str) -> tuple[int, int, int]:
     value = (value or "#ffffff").lstrip("#")
     if len(value) != 6:
         return (255, 255, 255)
@@ -49,7 +49,7 @@ def upright_filled(img: Image.Image, background: str = "#ffffff") -> Image.Image
         img = img.convert("RGBA")
     if img.mode in ("RGBA", "LA", "PA"):
         rgba = img.convert("RGBA")
-        canvas = Image.new("RGBA", rgba.size, parse_colour(background) + (255,))
+        canvas = Image.new("RGBA", rgba.size, parse_color(background) + (255,))
         canvas.alpha_composite(rgba)
         return canvas.convert("RGB")
     return img.convert("RGB")
@@ -62,7 +62,7 @@ def prepare_bytes(path: Path, long_side: int, background: str = "#ffffff") -> by
     if long_side and max(img.size) > long_side:
         img.thumbnail((long_side, long_side), Image.LANCZOS)
     buffer = io.BytesIO()
-    # High quality and full colour resolution, so the copy the model sees adds no compression marks of its own.
+    # High quality and full color resolution, so the copy the model sees adds no compression marks of its own.
     img.save(buffer, "JPEG", quality=96, subsampling=0)
     return buffer.getvalue()
 
@@ -99,7 +99,7 @@ def hamming(a: str, b: str) -> int:
 
 
 def tiny_test_image() -> str:
-    """A small image with two coloured squares, for Test connection."""
+    """A small image with two colored squares, for Test connection."""
     img = Image.new("RGB", (64, 64), (255, 255, 255))
     for x in range(8, 30):
         for y in range(8, 30):

@@ -64,7 +64,7 @@
     function wordlistEditor() {
         const area = h('textarea', { class: 'mono', rows: 16, spellcheck: 'false' }, JSON.stringify(App.wordlists, null, 2));
         return h('details', { class: 'card' },
-            h('summary', null, 'Word lists and tag map (used by Mixed Flavours and Flavour Clash)'),
+            h('summary', null, 'Word lists and tag map (used by Mixed Flavors and Flavor Clash)'),
             h('p', { class: 'hint', style: 'margin-bottom:8px' },
                 'In "categories", words in the same inner list are wordings of one fact (red, crimson); words in different lists are different facts (red, blue). Only these categories are compared when the model wavers. "tag_map" says which booru tags are checked against which field.'),
             area,

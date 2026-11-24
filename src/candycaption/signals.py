@@ -78,6 +78,8 @@ def uncertain_words(raw: str, tokens: list[dict[str, Any]] | None, names: dict[s
         if word not in index:
             continue
         category, group = index[word]
+        a, b = spans[key]
+        rest = set(WORD_RE.findall(raw.lower(), match.end(), b))
         alts = []
         for alt in tok.get("top") or []:
             alt_word = alt["token"].strip().lower().strip(".,;:\"'")
@@ -85,13 +87,21 @@ def uncertain_words(raw: str, tokens: list[dict[str, Any]] | None, names: dict[s
             if alt_word == word or alt_word not in index or p < min_alt:
                 continue
             alt_category, alt_group = index[alt_word]
-            if alt_category == category and alt_group != group:
-                alts.append({"word": alt_word, "p": round(p, 3)})
+            if alt_category != category or alt_group == group:
+                continue
+            # When the alternative turns up later in the same field ("green tunic ... brown belt",
+            # "left figure ... right figure"), the model was choosing what to mention first,
+            # not wavering about a fact.
+            if any(index.get(later) == (alt_category, alt_group) for later in rest):
+                continue
+            alts.append({"word": alt_word, "p": round(p, 3)})
         if alts:
             p_word = round(math.exp(tok.get("logprob", 0.0)), 3)
             best = max(alts, key=lambda a: a["p"])
             items.append({
                 "field": key, "word": word, "p": p_word, "alts": alts, "category": category,
+                # Which occurrence of the word in the field this is, so the page marks the right one.
+                "nth": len(re.findall(r"(?<![\w-])" + re.escape(word) + r"(?![\w-])", raw.lower()[a:start])),
                 "score": min(1.0, 2 * sum(a["p"] for a in alts)),
                 "message": f"{names[key]}: model split between {word} ({p_word:.0%}) and {best['word']} ({best['p']:.0%})",
             })
@@ -109,15 +119,15 @@ def parse_tags(text: str) -> list[str]:
     return tags
 
 
-def _colour_group(word: str, wordlists: dict[str, Any], index: dict[str, tuple[str, int]]) -> int | None:
-    aliases = wordlists["tag_map"].get("colour_aliases") or {}
+def _color_group(word: str, wordlists: dict[str, Any], index: dict[str, tuple[str, int]]) -> int | None:
+    aliases = wordlists["tag_map"].get("color_aliases") or {}
     word = aliases.get(word, word)
     hit = index.get(word)
-    return hit[1] if hit and hit[0] == "colours" else None
+    return hit[1] if hit and hit[0] == "colors" else None
 
 
-def _colours_near(text: str, nouns: list[str], index: dict[str, tuple[str, int]]) -> set[int] | None:
-    """Colour groups described for any of these nouns; None when no noun is mentioned."""
+def _colors_near(text: str, nouns: list[str], index: dict[str, tuple[str, int]]) -> set[int] | None:
+    """Color groups described for any of these nouns; None when no noun is mentioned."""
     found: set[int] = set()
     seen = False
     for segment in re.split(r"[.;,]", text.lower()):
@@ -132,7 +142,7 @@ def _colours_near(text: str, nouns: list[str], index: dict[str, tuple[str, int]]
                 window = window + words[i + 2:i + 5]
             for near in window:
                 hit = index.get(near)
-                if hit and hit[0] == "colours":
+                if hit and hit[0] == "colors":
                     found.add(hit[1])
     return found if seen else None
 
@@ -143,15 +153,15 @@ def tag_contradictions(fields: dict[str, str], tags: list[str], names: dict[str,
     index = word_index(wordlists)
     tag_map = wordlists.get("tag_map") or {}
     attributes = tag_map.get("attributes") or {}
-    colours = wordlists["categories"].get("colours") or []
+    colors = wordlists["categories"].get("colors") or []
     items = []
 
-    # Several colour tags can share one attribute ("red_hair" and "blue_hair" with 2girls).
+    # Several color tags can share one attribute ("red_hair" and "blue_hair" with 2girls).
     wanted: dict[str, dict[int, str]] = {}
     for tag in tags:
         for attr in attributes:
             if tag.endswith("_" + attr):
-                group = _colour_group(tag[: -len(attr) - 1], wordlists, index)
+                group = _color_group(tag[: -len(attr) - 1], wordlists, index)
                 if group is not None:
                     wanted.setdefault(attr, {})[group] = tag
     for attr, groups in wanted.items():
@@ -159,10 +169,10 @@ def tag_contradictions(fields: dict[str, str], tags: list[str], names: dict[str,
         field = spec["field"]
         if field not in names:
             continue
-        found = _colours_near(fields.get(field, ""), [n.lower() for n in spec["nouns"]], index)
+        found = _colors_near(fields.get(field, ""), [n.lower() for n in spec["nouns"]], index)
         if not found or found & set(groups):
             continue
-        said = ", ".join(colours[g][0] for g in sorted(found))
+        said = ", ".join(colors[g][0] for g in sorted(found))
         tag = next(iter(groups.values()))
         items.append({"field": field, "tag": tag, "score": 1.0,
                       "message": f"{names[field]}: says {said} {attr}, but the tagger says {tag}"})

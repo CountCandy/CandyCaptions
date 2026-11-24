@@ -46,7 +46,7 @@ def test_tag_contradictions_but_not_omissions():
     assert found == {("appearance", "red_hair"), ("appearance", "blue_eyes"), ("clothing", "white_shirt"), ("subjects", "1girl")}
 
 
-def test_two_hair_colour_tags_are_satisfied_by_either():
+def test_two_hair_color_tags_are_satisfied_by_either():
     fields = {"appearance": "one with red hair, one with blue hair", "subjects": "two girls"}
     assert sig.tag_contradictions(fields, ["2girls", "red_hair", "blue_hair"], NAMES, DEFAULT_WORDLISTS) == []
 
@@ -96,7 +96,7 @@ def test_filters(query, expected):
     assert compile_filter(query)(ROW) is expected
 
 
-@pytest.mark.parametrize("query", ["signal:nonsense", "words>many", "(file:cat", "colour:red", "AND"])
+@pytest.mark.parametrize("query", ["signal:nonsense", "words>many", "(file:cat", "color:red", "AND"])
 def test_bad_filters_explain_themselves(query):
     with pytest.raises(FilterError):
         compile_filter(query)
@@ -108,17 +108,17 @@ def snapshot(prefill_id, **extra):
     return base
 
 
-FIELDS = {"quality": "finished piece, watermark", "style": "watercolour", "camera": "close-up", "subjects": "one girl",
+FIELDS = {"quality": "finished piece, watermark", "style": "watercolor", "camera": "close-up", "subjects": "one girl",
           "appearance": "silver hair", "clothing": "none", "expression": "smiling", "action": "waving",
           "setting": "a beach", "lighting": "sunset", "text": "none", "rating": "safe"}
 
 
 def test_style_prefill_leaves_style_out_and_character_keeps_it():
     style = compose_messages(snapshot("style"), FIELDS)[1]["content"]
-    assert "watercolour" not in style and "Content rating" not in style and "Clothing" not in style
+    assert "watercolor" not in style and "Content rating" not in style and "Clothing" not in style
     assert "Quality (mention defects only" in style
     character = compose_messages(snapshot("character", trigger="kyarine"), FIELDS)
-    assert "Style and medium: watercolour" in character[1]["content"]
+    assert "Style and medium: watercolor" in character[1]["content"]
     assert "Refer to the character as kyarine." in character[0]["content"]
     assert "only changes from the character's usual look" in character[1]["content"]
 
@@ -173,6 +173,51 @@ def test_sampling_never_sends_what_a_backend_ignores():
     ("https://example.com/api/v1", "https://example.com/api/v1"), ("", ""),
 ])
 def test_a_bare_server_address_gets_v1(given, expected):
-    from candycaption.client import normalise_base_url
+    from candycaption.client import normalize_base_url
 
-    assert normalise_base_url(given) == expected
+    assert normalize_base_url(given) == expected
+
+
+def test_a_choice_of_what_to_mention_first_is_not_flagged():
+    # "green tunic ... brown belt": brown comes later in the same field, so green/brown was an ordering choice.
+    raw = '{"clothing": "green tunic with brown belt, green boots", "appearance": "red hair, red cheeks"}'
+    tokens = [token('{"'), token("clothing"), token('": "'), token("green", 0.74, [("brown", 0.18 + 0.1)]), token(" tunic"),
+              token(" with"), token(" brown"), token(" belt"), token(","), token(" green"), token(" boots"), token('", "'),
+              token("appearance"), token('": "'), token("red"), token(" hair"), token(","),
+              token(" red", 0.49, [(" orange", 0.36)]), token(" cheeks"), token('"}')]
+    items = sig.uncertain_words(raw, tokens, NAMES, DEFAULT_WORDLISTS, min_alt=0.25)
+    assert [(i["field"], i["word"], i["nth"]) for i in items] == [("appearance", "red", 1)]   # the second "red", not the first
+
+
+def test_long_captions_get_room_and_are_never_left_mid_sentence():
+    from candycaption.pipeline import clean_caption
+
+    cut = "Two figures stand in a clearing. The camera shows the full body of both"
+    assert clean_caption(cut, cut_off=True) == "Two figures stand in a clearing."
+    assert clean_caption(cut) == cut
+    assert clean_caption("One sentence only that never ends", cut_off=True) == "One sentence only that never ends"
+
+
+def test_old_settings_get_the_stricter_uncertain_word_default():
+    from candycaption.config import load_settings, save_json
+
+    save_json("settings.json", {"uncertain_min_alt": 0.15, "model": "m"})
+    assert load_settings()["uncertain_min_alt"] == 0.25
+    save_json("settings.json", {"uncertain_min_alt": 0.15, "settings_version": 2})
+    assert load_settings()["uncertain_min_alt"] == 0.15      # a value chosen after the change is kept
+
+
+def test_saved_recipes_and_word_lists_follow_the_spelling_change():
+    from candycaption.config import save_json
+    from candycaption.wordlists import load_wordlists
+
+    old = json.loads(json.dumps(DEFAULT_PREFILLS))
+    old[0]["rules"].append("Never mention colouring or judgement.")
+    save_json("prefills.json", old)
+    assert "Never mention coloring or judgment." in load_prefills()[0]["rules"]
+    lists = json.loads(json.dumps(DEFAULT_WORDLISTS))
+    lists["categories"]["colours"] = lists["categories"].pop("colors")
+    lists["tag_map"]["colour_aliases"] = lists["tag_map"].pop("color_aliases")
+    save_json("wordlists.json", lists)
+    loaded = load_wordlists()
+    assert "colors" in loaded["categories"] and "color_aliases" in loaded["tag_map"]

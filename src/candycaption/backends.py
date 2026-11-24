@@ -1,6 +1,6 @@
-"""Backend profiles: what each kind of model server honours.
+"""Backend profiles: what each kind of model server honors.
 
-The UI greys out a setting the connected backend ignores, and the request
+The UI grays out a setting the connected backend ignores, and the request
 builder here never sends it, so nothing is dropped silently.
 """
 

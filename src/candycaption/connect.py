@@ -41,7 +41,7 @@ async def test_connection(settings: dict[str, Any], probe_image_url: str | None 
             return {"ok": False, "models": models, "caps": caps, "lines": lines}
 
         image = tiny_test_image()
-        messages = [{"role": "user", "content": [text_part("Name the two colours of the squares in a few words."), image_part(image, probe_image_url)]}]
+        messages = [{"role": "user", "content": [text_part("Name the two colors of the squares in a few words."), image_part(image, probe_image_url)]}]
 
         # 1. An image on chat completions, with token probabilities if the server gives them.
         try:
@@ -82,7 +82,7 @@ async def test_connection(settings: dict[str, Any], probe_image_url: str | None 
             await _probe_responses(client, model, messages, sampling, caps, note)
 
         if not caps["chat_logprobs"] and not caps["responses_logprobs"]:
-            note(None, "Without token probabilities, Mixed Flavours (uncertain words) is off and Taste Check "
+            note(None, "Without token probabilities, Mixed Flavors (uncertain words) is off and Taste Check "
                        "(field checks) uses plain yes or no.")
         caps["tested"] = True
         return {"ok": True, "models": models, "caps": caps, "lines": lines}
@@ -136,7 +136,7 @@ async def _probe_responses(client: ModelClient, model: str, messages: list, samp
             raise
         setcaps(responses_schema=False)
         note(False, "JSON schema output does not work on /v1/responses, so field replies stay on chat completions "
-                    "and Mixed Flavours (uncertain words) is off.")
+                    "and Mixed Flavors (uncertain words) is off.")
     try:
         setcaps(responses_extra_sampling=True)
         await client.complete(model, [{"role": "user", "content": "Say ok."}],

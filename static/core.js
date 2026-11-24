@@ -85,12 +85,12 @@ function debounce(fn, ms = 500) {
     return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), ms); };
 }
 
-// --- Flags and health badges: each has an icon as well as a colour ---
+// --- Flags and health badges: each has an icon as well as a color ---
 const FLAGS = {
-    uncertain: { candy: 'Mixed Flavours', plain: 'uncertain words', icon: '◐' },
+    uncertain: { candy: 'Mixed Flavors', plain: 'uncertain words', icon: '◐' },
     checks: { candy: 'Taste Check', plain: 'field checks', icon: '?' },
-    tags: { candy: 'Flavour Clash', plain: 'tag contradictions', icon: '≠' },
-    template: { candy: 'Same Old Flavour', plain: 'template repetition', icon: '↻' },
+    tags: { candy: 'Flavor Clash', plain: 'tag contradictions', icon: '≠' },
+    template: { candy: 'Same Old Flavor', plain: 'template repetition', icon: '↻' },
 };
 const HEALTH_ICONS = {
     too_small: '▫', unreadable: '✗', sideways: '⟳', transparency: '◌', extreme_shape: '▭',
@@ -99,13 +99,13 @@ const HEALTH_ICONS = {
 
 function flagChip(signal, withPlain = true) {
     const flag = FLAGS[signal];
-    return h('span', { class: `chip ${signal}`, title: flag.plain }, flag.icon, ' ', flag.candy,
+    return h('span', { class: `chip ${signal}`, title: `${flag.plain}: ${FLAG_MEANING[signal]}` }, flag.icon, ' ', flag.candy,
         withPlain ? h('span', { class: 'plain' }, flag.plain) : null);
 }
 
 function flagIcons(signals) {
     return h('span', { class: 'icons' }, signals.map((s) =>
-        h('i', { style: `color: var(--flag-${s})`, title: `${FLAGS[s].candy} (${FLAGS[s].plain})` }, FLAGS[s].icon)));
+        h('i', { style: `color: var(--flag-${s})`, title: `${FLAGS[s].candy} (${FLAGS[s].plain}): ${FLAG_MEANING[s]}` }, FLAGS[s].icon)));
 }
 
 function healthChip(check, detail, withPlain = false) {
@@ -148,13 +148,45 @@ function wordDiff(before, after) {
     return out;
 }
 
-// Text with some words wrapped in <mark>.
-function markWords(text, words) {
-    const list = [...new Set(words)].filter(Boolean);
-    if (!list.length) return [text];
-    const escaped = list.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    const parts = text.split(new RegExp(`\\b(${escaped.join('|')})\\b`, 'gi'));
-    return parts.map((part, index) => (index % 2 ? h('mark', null, part) : part));
+// Text with the wavered words wrapped in <mark>. Each item names a word and which occurrence
+// of it (nth, counted from 0) the model wavered on, so only that one is marked.
+function markWavered(text, items) {
+    const spots = [];
+    for (const item of items) {
+        const re = new RegExp(`(?<![\\w-])${item.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w-])`, 'gi');
+        let match, seen = 0;
+        while ((match = re.exec(text)) !== null) {
+            if (item.nth == null || seen === item.nth) spots.push([match.index, match.index + match[0].length, item]);
+            seen++;
+        }
+    }
+    spots.sort((a, b) => a[0] - b[0]);
+    const out = [];
+    let at = 0;
+    for (const [start, end, item] of spots) {
+        if (start < at) continue;
+        out.push(text.slice(at, start), h('mark', { title: `Nearly wrote: ${item.alts.map((a) => `${a.word} (${Math.round(a.p * 100)}%)`).join(', ')}` }, text.slice(start, end)));
+        at = end;
+    }
+    out.push(text.slice(at));
+    return out;
+}
+
+// What the four flags mean, in plain words. Shown wherever the flag icons appear on their own.
+const FLAG_MEANING = {
+    uncertain: 'While writing a word, the model nearly wrote a different fact instead, such as orange where it wrote red. Check that one word against the image.',
+    checks: 'Asked "is this field accurate?" about the image, the model or the Taste Tester would not say yes.',
+    tags: 'A field says one thing and the tag file says another, such as blonde hair against red_hair.',
+    template: 'The caption shares long stretches of wording with many other captions in this run.',
+};
+
+function flagLegend() {
+    return h('details', { class: 'legend' },
+        h('summary', null, 'What the flag symbols mean'),
+        h('table', null, Object.keys(FLAGS).map((signal) => h('tr', null,
+            h('td', { style: 'white-space:nowrap' }, flagChip(signal)),
+            h('td', null, FLAG_MEANING[signal])))),
+        h('p', { class: 'hint', style: 'margin-top:6px' }, 'A flag is a reason to look, not a verdict. Captions with no symbol raised none of these. Click a caption to open it in the Sorting Table (review).'));
 }
 
 function overlay(content, { center = false, onclose } = {}) {
@@ -238,7 +270,7 @@ function mulberry32(a) {
 }
 const _cClamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const _cLerp = (a, b, t) => a + (b - a) * t;
-// Colour flows along the stick: bubblegum pink -> orchid -> grape.
+// Color flows along the stick: bubblegum pink -> orchid -> grape.
 const _CRUST_STOPS = [[0, [255, 99, 176]], [0.5, [201, 92, 238]], [1, [167, 89, 245]]];
 function _colorAt(t) {
     t = _cClamp(t, 0, 1);

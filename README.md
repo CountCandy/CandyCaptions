@@ -156,10 +156,10 @@ Four measured signals flag captions for review. The model is never asked to rate
 
 | Flag | Plain name | Catches | Needs |
 | --- | --- | --- | --- |
-| Mixed Flavours | uncertain words | the model wavered between two different facts, such as red or orange | token probabilities |
+| Mixed Flavors | uncertain words | the model wavered between two different facts, such as red or orange | token probabilities |
 | Taste Check | field checks | a field value the model, or the verifier, will not confirm when asked yes or no | one short request per field |
-| Flavour Clash | tag contradictions | a field disagrees with the tagger | a tag file |
-| Same Old Flavour | template repetition | the caption repeats long phrases found in many others | nothing |
+| Flavor Clash | tag contradictions | a field disagrees with the tagger | a tag file |
+| Same Old Flavor | template repetition | the caption repeats long phrases found in many others | nothing |
 
 Which word pairs count as "different facts" and which tags are checked against which field are editable
 lists (Recipe Box, at the bottom).
@@ -219,7 +219,7 @@ src/candycaption/
 ├── signals.py      the four review signals
 ├── wordlists.py    editable word lists and tag map
 ├── client.py       OpenAI-compatible client (chat completions and /v1/responses)
-├── backends.py     what each backend honours
+├── backends.py     what each backend honors
 ├── connect.py      Test connection
 ├── dataset.py      scanning, caption files, health checks, find and replace
 ├── store.py        the per-dataset SQLite store
@@ -239,6 +239,6 @@ panels and rock-candy progress bar.
 The Style tab (style card, CSD fit check), the tag editor and auto-tagger, the watched folder and the
 BluFlow export are planned for v2.
 
-## Licence
+## License
 
 MIT.

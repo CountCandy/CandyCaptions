@@ -10,7 +10,7 @@ in an image's tag file to trigger a failure for that image.
     mock_banned      the first caption uses banned words; the retry is clean
     mock_error       HTTP 500
     mock_unsure      the model wavers between red and orange clothing
-    mock_contradict  the hair colour disagrees with the tagger
+    mock_contradict  the hair color disagrees with the tagger
     mock_doubt       the yes/no check will not confirm the Clothing field
 
 Run it with ``candycaption mock`` and point the Candy Shop tab at
@@ -31,7 +31,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 COLOURS = ["red", "blue", "green", "black", "white", "pink", "purple", "brown", "blonde", "silver"]
-OUTFITS = ["school uniform with a pleated skirt", "hooded jacket over a shirt", "long summer dress", "knitted sweater and jeans", "armoured coat"]
+OUTFITS = ["school uniform with a pleated skirt", "hooded jacket over a shirt", "long summer dress", "knitted sweater and jeans", "armored coat"]
 PLACES = ["a classroom with desks by the window", "a city street at a crossing", "a forest clearing with tall grass", "a plain white background", "a kitchen counter with shelves"]
 POSES = ["standing with one hand raised", "sitting on a bench holding a cup", "walking while looking over the shoulder", "leaning on a railing", "kneeling and reaching forward"]
 LIGHTS = ["soft daylight from the left", "warm sunset light", "cool overcast light", "bright indoor lighting", "night, lit by street lamps"]
@@ -65,24 +65,24 @@ def _texts_and_image(messages: list[dict[str, Any]]) -> tuple[str, str | None]:
 
 def make_fields(keys: list[str], tags: list[str], seed: int) -> tuple[dict[str, str], dict[str, tuple[str, float]]]:
     """Fields for an image, plus {word: (alternative, probability)} the model 'wavered' on."""
-    def tag_colour(suffix: str, salt: int) -> str:
+    def tag_color(suffix: str, salt: int) -> str:
         for tag in tags:
             if tag.endswith("_" + suffix) and tag[: -len(suffix) - 1] in COLOURS:
                 return tag[: -len(suffix) - 1]
         return _pick(COLOURS, seed, salt)
 
-    hair, eyes = tag_colour("hair", 3), tag_colour("eyes", 5)
+    hair, eyes = tag_color("hair", 3), tag_color("eyes", 5)
     if "mock_contradict" in tags:
         hair = next(c for c in COLOURS if c != hair and c not in ("blonde",))
     count = "two girls" if "2girls" in tags else "one boy" if "1boy" in tags else "one girl"
-    cloth_colour = "red" if "mock_unsure" in tags else _pick(COLOURS, seed, 7)
+    cloth_color = "red" if "mock_unsure" in tags else _pick(COLOURS, seed, 7)
     values = {
         "quality": "finished piece" + (", small signature in the corner" if seed % 4 == 0 else ", no visible defects"),
         "style": "digital illustration with clean line work and flat shading",
         "camera": _pick(CAMERAS, seed, 2),
         "subjects": count,
         "appearance": f"long {hair} hair, {eyes} eyes",
-        "clothing": f"a {cloth_colour} scarf and a {_pick(OUTFITS, seed, 9)}",
+        "clothing": f"a {cloth_color} scarf and a {_pick(OUTFITS, seed, 9)}",
         "expression": _pick(FACES, seed, 11),
         "action": _pick(POSES, seed, 13),
         "setting": _pick(PLACES, seed, 15) + (" MOCK_BANNED" if "mock_banned" in tags else ""),
@@ -191,18 +191,18 @@ def create_app(*, chat_logprobs: bool = True, responses: bool = True, responses_
             return [{"token": text, "logprob": pair[0]["logprob"], "top_logprobs": pair}]
         return tokenize(text, unsure)
 
-    def unauthorised(request: Request) -> JSONResponse | None:
+    def unauthorized(request: Request) -> JSONResponse | None:
         if api_key and request.headers.get("authorization") != f"Bearer {api_key}":
             return JSONResponse({"error": {"message": "Invalid API key."}}, status_code=401)
         return None
 
     @app.get("/v1/models")
     async def models(request: Request):
-        return unauthorised(request) or {"object": "list", "data": [{"id": "mock-captioner"}, {"id": "mock-verifier"}]}
+        return unauthorized(request) or {"object": "list", "data": [{"id": "mock-captioner"}, {"id": "mock-verifier"}]}
 
     @app.post("/v1/chat/completions")
     async def chat(request: Request):
-        if (denied := unauthorised(request)):
+        if (denied := unauthorized(request)):
             return denied
         body = await request.json()
         state["requests"].append({"path": "chat", "body": body})
@@ -241,7 +241,7 @@ def create_app(*, chat_logprobs: bool = True, responses: bool = True, responses_
 
     @app.post("/v1/responses")
     async def respond(request: Request):
-        if (denied := unauthorised(request)):
+        if (denied := unauthorized(request)):
             return denied
         if not responses:
             return JSONResponse({"error": {"message": "Unknown endpoint"}}, status_code=404)
