@@ -196,3 +196,51 @@ async def test_tag_then_check_in_one_go_and_refusals(api):
     save_settings(settings)
     refused = await api.post("/api/tagger/run", json={"scope": "none", "check": True})
     assert refused.status_code == 400 and "Captioner" in refused.json()["detail"]
+
+
+def test_the_dataset_lists_decide_what_leads_and_what_is_left_out():
+    from candycaption.tagger import arrange, tag_rules
+
+    ds = {"trigger": "kandrevel", "tags_trigger_first": True, "tags_first": "best quality, Kandrevel", "tags_never": "* hair, blue_eyes, hat"}
+    first, never = tag_rules(ds)
+    assert first == ["kandrevel", "best quality"] and never == ["* hair", "blue_eyes", "hat"]
+    tags = ["1girl", "red hair", "Long_Hair", "blue eyes", "hat", "straw hat", "best quality", "hairband", "kandrevel"]
+    # Patterns match whole tags: "* hair" takes the hair tags but not hairband, and "hat" does not take straw hat.
+    assert arrange(tags, first, never) == ["kandrevel", "best quality", "1girl", "straw hat", "hairband"]
+    assert arrange(["hat"], ["hat"], ["hat"]) == ["hat"]                    # a first tag wins over a never pattern
+    assert tag_rules({"trigger": "kandrevel", "tags_trigger_first": False}) == ([], [])
+    assert arrange(tags, [], []) == tags
+
+
+async def test_tag_files_follow_the_lists_when_written_checked_or_applied(api, mock_url):
+    folder = api.folder
+    await api.put("/api/dataset/settings", json={"trigger": "kandrevel", "tags_never": "red hair, mock_wrong, tree"})
+    job = await run_tagger(api, scope="missing", check=True)
+    assert job["state"] == "done"
+    # The tagger's own output: trigger first, the never tag left out.
+    assert (folder / "a red.txt").read_text(encoding="utf-8") == "kandrevel, 1girl, ^_^\n"
+    # A tag file that was already there is brought in line before the model sees it, then checked.
+    assert split_tags((folder / "c mine.txt").read_text(encoding="utf-8")) == ["kandrevel", "1girl", "orange hair", "kept tag", "outdoors"]
+    sent = [r["body"]["messages"][-1]["content"][0]["text"] for r in mock_url[1].state.mock["requests"]
+            if r["body"].get("response_format", {}).get("json_schema", {}).get("name") == "tag_check"]
+    assert sent and all("mock_wrong" not in text and text.startswith("Tags to check: kandrevel") for text in sent[-4:])
+
+    # Changing the lists later: one button brings every file in line, and says how many changed.
+    await api.put("/api/dataset/settings", json={"tags_first": "best quality", "tags_never": "1girl"})
+    assert (await api.post("/api/tagger/apply")).json() == {"changed": 4}
+    assert (folder / "a red.txt").read_text(encoding="utf-8") == "kandrevel, best quality, ^_^\n"
+    assert (await api.post("/api/tagger/apply")).json() == {"changed": 0}
+    await api.put("/api/dataset/settings", json={"tags_trigger_first": False})
+    # The trigger word is no longer held in front, so the remaining first tag leads. Nothing removes the word itself.
+    assert (await api.post("/api/tagger/apply")).json() == {"changed": 4}
+    assert (folder / "a red.txt").read_text(encoding="utf-8") == "best quality, kandrevel, ^_^\n"
+
+
+def test_the_tagger_falls_back_to_the_cpu_and_says_which_it_uses(toy_tagger):
+    assert Tagger(toy_tagger, "toy", "cpu").device == "CPU"
+    auto = Tagger(toy_tagger, "toy", "auto")
+    assert auto.device in ("GPU", "CPU") and auto.wanted_gpu      # no graphics card here means CPU, without an error
+    settings = {"tagger_path": str(toy_tagger)}
+    assert status(settings)["device"] is None                      # not known until it has been loaded
+    get_tagger(settings)
+    assert status(settings)["device"] in ("GPU", "CPU") and status(dict(settings, tagger_device="cpu"))["device"] is None

@@ -122,6 +122,7 @@
         const line = running
             ? `${job.steps > 1 && job.step_number ? `Step ${job.step_number} of ${job.steps}: ` : ''}${job.step || 'Getting ready'}… ${job.step_total ? `${job.step_done} of ${job.step_total} images` : ''}`
             : (job.message || '');
+        const where = d.tagger.device ? `It is running on the ${d.tagger.device}.` : (d.tagger.device_setting === 'cpu' ? 'It is set to use the CPU.' : 'It uses the graphics card when it can.');
         const scopes = [
             ['missing', `Tag the ${untagged} image${untagged === 1 ? '' : 's'} with no tag file`],
             ['all', 'Tag every image again (old tags are kept in each image\'s history)'],
@@ -131,7 +132,7 @@
             h('h2', null, candy('Label Maker', 'auto-tagger: writes a tag file for each image')),
             h('p', { class: 'hint', style: 'margin:4px 0 10px' },
                 `${d.tagged} of ${d.images.length} images have a tag file. `,
-                'The tagger reads each image and writes its tags next to it. Then, if you tick the box, your Captioner model looks at the image too and strikes or corrects tags that are clearly wrong. It keeps a tag whenever it is unsure, never adds tags, and never touches the trigger word. Each change is listed with the image and one click undoes it.'),
+                `The tagger reads each image and writes its tags next to it. ${where} Then, if you tick the box, your Captioner model looks at the image too and strikes or corrects tags that are clearly wrong. It keeps a tag whenever it is unsure, never adds tags, and never touches the trigger word. Each change is listed with the image and one click undoes it.`),
             h('div', { class: 'row', style: 'align-items:center' },
                 h('select', { style: 'width:auto; flex:1; min-width:260px', disabled: running, onchange: (e) => { tagScope = e.target.value; } },
                     scopes.map(([value, label]) => h('option', { value, selected: tagScope === value }, label))),
@@ -146,10 +147,34 @@
                         render();
                     }) }, 'Make the labels')),
             line ? h('p', { id: 'tagLine', class: job.state === 'failed' ? 'notice' : 'hint', style: 'margin-top:10px' }, line) : h('p', { id: 'tagLine', class: 'hint', style: 'margin-top:10px' }),
+            job.note ? h('p', { class: 'notice', style: 'margin-top:6px' }, job.note) : null,
+            h('h3', { style: 'margin-top:16px' }, 'This dataset\'s tag lists', h('span', { class: 'plain' }, 'applied to every tag file the Label Maker writes or checks')),
+            h('div', { class: 'grid2' },
+                h('div', { class: 'field' },
+                    h('label', { class: 'check', style: 'margin:0 0 8px', title: 'BluFlow can keep the first tags in place while it shuffles the rest, so the trigger word has to come first.' },
+                        h('input', { type: 'checkbox', checked: d.settings.tags_trigger_first !== false, disabled: running, onchange: (e) => saveTagList({ tags_trigger_first: e.target.checked }) }),
+                        'Put the trigger word first', h('span', { class: 'plain' }, d.settings.trigger ? `currently: ${d.settings.trigger}` : 'none set yet; it is in the recipe on the Candy Factory tab')),
+                    h('label', null, 'Other tags to always put first', h('span', { class: 'plain' }, 'separated by commas; added when missing')),
+                    h('input', { type: 'text', value: d.settings.tags_first || '', disabled: running, placeholder: 'for example: masterpiece, best quality', onchange: (e) => saveTagList({ tags_first: e.target.value }) })),
+                h('div', { class: 'field' },
+                    h('label', null, 'Tags never to write', h('span', { class: 'plain' }, 'separated by commas; * stands for anything')),
+                    h('textarea', { rows: 3, value: d.settings.tags_never || '', disabled: running, placeholder: 'for a character LoRA, the fixed traits the trigger word should carry: * hair, * eyes', onchange: (e) => saveTagList({ tags_never: e.target.value }) }),
+                    h('p', { class: 'hint', style: 'margin-top:4px' }, 'Leaving a trait out of the tags lets the trigger word absorb it. The model cannot strike or change a tag from the first list.'))),
+            h('div', { class: 'row' },
+                h('button', { class: 'quiet small', disabled: running || !d.tagged, title: 'Rewrites the tag files that do not follow the lists yet. The old tags stay in each image\'s history.',
+                    onclick: (e) => act(e.target, async () => {
+                        const result = await api('/api/tagger/apply', 'POST');
+                        toast(result.changed ? `${result.changed} tag file${result.changed === 1 ? '' : 's'} brought in line with the lists.` : 'Every tag file already follows the lists.');
+                        await reload();
+                    }) }, 'Apply the lists to the tag files now')),
             d.tagger.ready ? null : h('p', { class: 'hint', style: 'margin-top:6px' }, d.tagger.local
                 ? `The tagger folder ${d.tagger.folder} does not hold model.onnx and selected_tags.csv yet.`
                 : `The tagger (${d.tagger.source}, about 1.3 GB) is downloaded the first time you tag. That needs the internet once.`),
             d.tags_changed ? h('p', { class: 'hint', style: 'margin-top:6px' }, `The model changed tags on ${d.tags_changed} image${d.tags_changed === 1 ? '' : 's'}. Each one is marked in the list below.`) : null);
+    }
+
+    async function saveTagList(change) {
+        await act(null, async () => { App.dataset.settings = (await api('/api/dataset/settings', 'PUT', change)).settings; });
     }
 
     on('tag_progress', (event) => {

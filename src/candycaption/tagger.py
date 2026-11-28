@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import fnmatch
 import json
 import logging
 import threading
@@ -51,10 +52,55 @@ def split_tags(text: str) -> list[str]:
     return [t.strip() for t in text.replace("\n", ",").split(",") if t.strip()]
 
 
+def _same(tag: str) -> str:
+    """How a tag is compared: "Red_Hair" and "red hair" are the same tag."""
+    return " ".join(tag.lower().replace("_", " ").split())
+
+
+def tag_rules(ds: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """(tags that always lead the file, patterns for tags that are never written) for this dataset."""
+    first = split_tags(ds.get("trigger") or "") if ds.get("tags_trigger_first", True) else []
+    first += [t for t in split_tags(ds.get("tags_first") or "") if _same(t) not in {_same(f) for f in first}]
+    return first, split_tags(ds.get("tags_never") or "")
+
+
+def arrange(tags: list[str], first: list[str], never: list[str]) -> list[str]:
+    """Apply the dataset's lists: drop the never tags, then put the first tags in front.
+
+    A never entry may use * for "anything", so "* hair" drops every hair tag. A first tag is always
+    kept, even when a never pattern would match it.
+    """
+    lead = {_same(t) for t in first}
+    patterns = [_same(p) for p in never]
+    out, seen = list(first), set(lead)
+    for tag in tags:
+        key = _same(tag)
+        if key in seen or any(fnmatch.fnmatchcase(key, pattern) for pattern in patterns):
+            continue
+        seen.add(key)
+        out.append(tag)
+    return out
+
+
+def apply_rules(project: Project) -> int:
+    """Bring every existing tag file in line with the dataset's lists. Returns how many files changed."""
+    first, never = tag_rules(project.store.settings())
+    changed = 0
+    for image in project.store.images():
+        if not project.tags_path(image).exists():
+            continue
+        old = split_tags(project.read_tags(image))
+        new = arrange(old, first, never)
+        if new != old:
+            project.write_tags(image, ", ".join(new), "the dataset's tag lists were applied")
+            changed += 1
+    return changed
+
+
 class Tagger:
     """One loaded tagger: an ONNX model and the list of tags it knows."""
 
-    def __init__(self, folder: Path, source: str):
+    def __init__(self, folder: Path, source: str, device: str = "auto"):
         try:
             import onnxruntime as ort
         except ImportError as exc:  # pragma: no cover - the dependency is installed with the app
@@ -67,8 +113,15 @@ class Tagger:
         self.names = [tidy(row["name"]) for row in rows]
         self.categories = [int(row["category"]) for row in rows]
         self.vocabulary = {name.lower() for name in self.names}
-        providers = [p for p in ("CUDAExecutionProvider", "CPUExecutionProvider") if p in ort.get_available_providers()]
+        wanted = ("CPUExecutionProvider",) if device == "cpu" else ("CUDAExecutionProvider", "CPUExecutionProvider")
+        providers = [p for p in wanted if p in ort.get_available_providers()]
+        if "CUDAExecutionProvider" in providers and hasattr(ort, "preload_dlls"):
+            try:
+                ort.preload_dlls()     # finds the CUDA libraries that were installed beside onnxruntime
+            except Exception as exc:  # noqa: BLE001 - the card is then simply not used
+                logger.warning("Could not load the CUDA libraries, so the tagger will use the CPU: %s", exc)
         try:
+            # If the graphics card cannot be used, onnxruntime falls back to the next provider by itself.
             self.session = ort.InferenceSession(str(model), providers=providers)
         except Exception as exc:  # noqa: BLE001 - a damaged or half-downloaded file
             raise TaggerError(f"The tagger model in {folder} could not be loaded ({type(exc).__name__}). "
@@ -79,6 +132,7 @@ class Tagger:
         self.size = int(entry.shape[1]) if isinstance(entry.shape[1], int) else 448
         self.source = source
         self.device = "GPU" if self.session.get_providers()[0].startswith("CUDA") else "CPU"
+        self.wanted_gpu = device != "cpu"
         self._lock = threading.Lock()
 
     def _prepare(self, path: Path, background: str) -> np.ndarray:
@@ -110,7 +164,7 @@ class Tagger:
         return {"tags": [name for _, _, name in found], "scores": {name: round(-s, 3) for _, s, name in found}, "rating": rating}
 
 
-_loaded: dict[tuple[str, str], Tagger] = {}
+_loaded: dict[tuple[str, str, str], Tagger] = {}
 _load_lock = threading.Lock()
 
 
@@ -127,14 +181,19 @@ def status(settings: dict[str, Any]) -> dict[str, Any]:
     """Whether the tagger is on disk, without loading or downloading anything."""
     folder, source = tagger_folder(settings)
     ready = (folder / MODEL_FILE).is_file() and (folder / TAGS_FILE).is_file()
-    return {"ready": ready, "source": source, "folder": str(folder), "local": bool((settings.get("tagger_path") or "").strip()),
+    device = "cpu" if settings.get("tagger_device") == "cpu" else "auto"
+    loaded = _loaded.get((str(folder), source, device))
+    return {"ready": ready, "device_setting": device,
+            # Known only once the tagger has been loaded: which of the two it is really running on.
+            "device": loaded.device if loaded else None, "source": source, "folder": str(folder), "local": bool((settings.get("tagger_path") or "").strip()),
             "general": float(settings.get("tagger_general", 0.35)), "character": float(settings.get("tagger_character", 0.85))}
 
 
 def get_tagger(settings: dict[str, Any]) -> Tagger:
     """Load the tagger, downloading it the first time. Slow the first time, instant after."""
     folder, source = tagger_folder(settings)
-    key = (str(folder), source)
+    device = "cpu" if settings.get("tagger_device") == "cpu" else "auto"
+    key = (str(folder), source, device)
     with _load_lock:
         if key in _loaded:
             return _loaded[key]
@@ -153,7 +212,7 @@ def get_tagger(settings: dict[str, Any]) -> Tagger:
                     f"The tagger could not be downloaded from {source} ({type(exc).__name__}). Check the internet "
                     f"connection, or download {MODEL_FILE} and {TAGS_FILE} yourself and set their folder as the "
                     "tagger folder in the Candy Shop tab.") from exc
-        _loaded[key] = Tagger(folder, source)
+        _loaded[key] = Tagger(folder, source, device)
         return _loaded[key]
 
 
@@ -285,6 +344,7 @@ class TagJob:
         self.state, self.message, self.step = "idle", "", ""
         self.steps = self.step_number = self.step_done = self.step_total = 0
         self.written = self.changed = self.failed = 0
+        self.note = ""
         self._stop = False
         self._task: asyncio.Task | None = None
 
@@ -295,7 +355,7 @@ class TagJob:
     def status(self) -> dict[str, Any]:
         return {"state": self.state, "message": self.message, "step": self.step, "steps": self.steps,
                 "step_number": self.step_number, "step_done": self.step_done, "step_total": self.step_total,
-                "written": self.written, "changed": self.changed, "failed": self.failed}
+                "written": self.written, "changed": self.changed, "failed": self.failed, "note": self.note}
 
     def _tell(self) -> None:
         self.publish({"type": "tag_progress", **self.status()})
@@ -322,6 +382,7 @@ class TagJob:
         ds = store.settings()
         background = ds.get("background", "#ffffff")
         general, character = float(self.app.get("tagger_general", 0.35)), float(self.app.get("tagger_character", 0.85))
+        first, never = tag_rules(ds)
         images = self._images()
         to_tag = [] if scope == "none" else [i for i in images if scope == "all" or not project.tags_path(i).exists()]
         self.steps = (1 if to_tag else 0) + (1 if check else 0)
@@ -333,13 +394,16 @@ class TagJob:
                 self._tell()
                 tagger = await asyncio.to_thread(self.tagger_factory, self.app)
                 vocabulary = getattr(tagger, "vocabulary", None)
-                self.step = f"Tagging each image ({getattr(tagger, 'device', 'CPU')})"
+                self.step = f"Tagging each image (on the {getattr(tagger, 'device', 'CPU')})"
+                if getattr(tagger, "wanted_gpu", False) and getattr(tagger, "device", "CPU") == "CPU":
+                    self.note = ("The tagger is running on the CPU because the graphics card could not be used. It still "
+                                 "works, only slower. An up-to-date NVIDIA driver is what it usually needs.")
                 for image in to_tag:
                     if self._stop:
                         break
                     try:
                         result = await asyncio.to_thread(tagger.tag, project.path(image), general, character, background)
-                        project.write_tags(image, ", ".join(result["tags"]), "tagged again by the tagger")
+                        project.write_tags(image, ", ".join(arrange(result["tags"], first, never)), "tagged again by the tagger")
                         store.update_image(image["id"], tagging={
                             "by": getattr(tagger, "source", "tagger"), "at": time.time(), "count": len(result["tags"]),
                             "rating": result.get("rating", ""), "removed": [], "replaced": [], "checked_by": "", "refused": ""})
@@ -349,6 +413,8 @@ class TagJob:
                         logger.warning("Tagging %s failed: %s", image["rel"], exc)
                     self.step_done += 1
                     self._tell()
+            # Tag files from elsewhere follow the dataset's lists too, before the model looks at them.
+            await asyncio.to_thread(apply_rules, project)
             if check and not self._stop:
                 await self._check(scope, {i["id"] for i in to_tag}, vocabulary, background)
             parts = []
@@ -392,7 +458,7 @@ class TagJob:
         self._tell()
         if not todo:
             return
-        protected = set(split_tags(snapshot.get("trigger") or ""))
+        protected = set(tag_rules(store.settings())[0]) | set(split_tags(snapshot.get("trigger") or ""))
         long_side = int(snapshot["sampling"].get("long_side", 1536))
         gate = asyncio.Semaphore(max(1, min(8, int(store.settings().get("parallel", 4)))))
         client = self.client_factory(self.app)

@@ -322,3 +322,54 @@ def test_saved_recipes_pick_up_the_longer_caption_without_losing_changes():
     before = json.dumps(mine)
     upgrade_prefill(mine, default_prefill("style"))
     assert json.dumps(mine) == before                                            # and only once
+
+
+def test_flavor_clash_covers_opposites_absence_and_more_colors():
+    names = dict(NAMES, camera="Camera and framing", setting="Setting and background", lighting="Lighting and time",
+                 action="Action and pose", expression="Expression and gaze", style="Style and medium", quality="Quality")
+
+    def clashes(fields, tags):
+        return {(i["field"], i["tag"]) for i in sig.tag_contradictions(fields, sig.parse_tags(tags), names, DEFAULT_WORDLISTS)}
+
+    agree = {"appearance": "long hair down to her waist", "action": "sitting on a bench", "camera": "full body, seen from above",
+             "setting": "outdoors in a park, with a green background", "lighting": "bright daylight", "expression": "eyes closed, smiling",
+             "clothing": "a wide hat and white socks", "subjects": "one girl", "quality": "no visible defects"}
+    tags = "1girl, long hair, sitting, full body, from above, outdoors, day, closed eyes, hat, white socks, green background"
+    assert clashes(agree, tags) == set()
+
+    clash = {"appearance": "short hair in a bob cut", "action": "she stands by a bench", "camera": "close-up from below",
+             "setting": "indoors, against a blue background", "lighting": "moonlight through a window",
+             "expression": "looking at the viewer", "clothing": "no hat, black socks", "subjects": "one girl",
+             "quality": "finished piece, no watermark"}
+    assert clashes(clash, tags + ", watermark") == {
+        ("appearance", "long_hair"), ("action", "sitting"), ("camera", "full_body"), ("camera", "from_above"),
+        ("setting", "outdoors"), ("lighting", "day"), ("expression", "closed_eyes"), ("clothing", "hat"),
+        ("clothing", "white_socks"), ("setting", "green_background"), ("quality", "watermark")}
+
+    # Leaving something out is never a clash, and a word inside a longer word does not count.
+    quiet = {"appearance": "a girl", "action": "a knight rests", "camera": "none", "setting": "a room", "lighting": "none",
+             "expression": "calm", "clothing": "a coat", "subjects": "one girl"}
+    assert clashes(quiet, tags + ", night") == set()
+    # With several people, one may sit while the other stands, so pose and hair length are not judged.
+    pair = dict(clash, subjects="two girls")
+    found = clashes(pair, tags.replace("1girl", "2girls"))
+    assert ("action", "sitting") not in found and ("appearance", "long_hair") not in found and ("setting", "outdoors") in found
+    # The tagger sees nobody; the field counts someone.
+    assert clashes({"subjects": "one girl by a tree"}, "no humans, tree") == {("subjects", "no_humans")}
+    # Black and white in the field against a tagger that did not say monochrome is not judged; the reverse is.
+    assert clashes({"style": "a full-color digital painting"}, "monochrome") == {("style", "monochrome")}
+
+
+def test_saved_word_lists_gain_the_new_checks(data_dir):
+    import copy
+    from candycaption.config import save_json
+    from candycaption.wordlists import load_wordlists
+
+    old = copy.deepcopy(DEFAULT_WORDLISTS)
+    for key in ("opposites", "absence_skip", "people_tag", "attributes_version"):
+        old["tag_map"].pop(key)
+    old["tag_map"]["attributes"] = {"hair": {"field": "appearance", "nouns": ["hair", "my own word"]}}
+    save_json("wordlists.json", old)
+    loaded = load_wordlists()
+    assert loaded["tag_map"]["opposites"] and "background" in loaded["tag_map"]["attributes"]
+    assert loaded["tag_map"]["attributes"]["hair"]["nouns"] == ["hair", "my own word"]      # an edited entry is kept

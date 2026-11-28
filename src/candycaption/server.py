@@ -719,6 +719,16 @@ async def tagger_run(body: dict = Body(default={})):
     return state.tag_job.status()
 
 
+@app.post("/api/tagger/apply")
+async def tagger_apply():
+    """Bring the existing tag files in line with this dataset's "always first" and "never write" lists."""
+    proj = project()
+    if (busy := something_running()):
+        raise fail(409, f"{busy} Wait for it to finish first.")
+    changed = await asyncio.to_thread(tagger.apply_rules, proj)
+    return {"changed": changed}
+
+
 @app.post("/api/tagger/stop")
 async def tagger_stop():
     if state.tag_job:

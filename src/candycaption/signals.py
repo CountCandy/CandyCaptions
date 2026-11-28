@@ -201,7 +201,55 @@ def tag_contradictions(fields: dict[str, str], tags: list[str], names: dict[str,
             if wrong:
                 items.append({"field": count_field, "tag": tag, "score": 1.0,
                               "message": f"{names[count_field]}: counts {', '.join(map(str, sorted(said)))}, but the tagger says {tag}"})
+
+        # The tagger sees nobody, and the field counts people.
+        people_tag = tag_map.get("people_tag")
+        if people_tag and people_tag in tags:
+            nouns = {n for group in (tag_map.get("count_nouns") or {}).values() for n in group}
+            for i, word in enumerate(words):
+                if word in nouns and any(NUMBER_WORDS.get(w) or w.isdigit() for w in words[max(0, i - 3):i]):
+                    items.append({"field": count_field, "tag": people_tag, "score": 1.0,
+                                  "message": f"{names[count_field]}: counts people, but the tagger says {people_tag}"})
+                    break
+
+    several = any(((tag_map.get("counts") or {}).get(t) or {}).get("count", 1) > 1 for t in tags) or any(
+        t.startswith("multiple_") for t in tags)
+    tagset = set(tags)
+    for spec in tag_map.get("opposites") or []:
+        field = spec.get("field")
+        if field not in names or (spec.get("per_person") and several):
+            continue
+        text = fields.get(field, "").lower()
+        said = [n for n, choice in enumerate(spec["choices"]) if any(_has_phrase(text, p) for p in choice["says"])]
+        tagged = [n for n, choice in enumerate(spec["choices"]) if tagset & set(choice["tags"])]
+        # A clash needs the tagger to say one thing and the field to say only another.
+        if len(tagged) != 1 or not said or tagged[0] in said:
+            continue
+        tag = next(t for t in spec["choices"][tagged[0]]["tags"] if t in tagset)
+        phrase = next(p for p in spec["choices"][said[0]]["says"] if _has_phrase(text, p))
+        items.append({"field": field, "tag": tag, "score": 0.8,
+                      "message": f"{names[field]}: says \"{phrase}\", but the tagger says {tag}"})
+
+    skip = set(tag_map.get("absence_skip") or []) | set(tag_map.get("counts") or {})
+    flagged = {(i["field"], i["tag"]) for i in items}
+    for tag in tags:
+        if tag in skip or tag.startswith("no_") or len(tag) < 3 or not re.fullmatch(r"[a-z][a-z0-9_ -]*", tag):
+            continue
+        words_of_tag = r"[\s-]+".join(re.escape(w) for w in tag.split("_"))
+        absent = re.compile(r"\b(?:no|without(?:\s+an?|\s+any)?|not\s+wearing(?:\s+an?|\s+any)?|lacks?(?:\s+an?|\s+any)?)\s+"
+                            + words_of_tag + r"(?:e?s)?\b")
+        for field, name in names.items():
+            hit = absent.search(fields.get(field, "").lower())
+            if hit and (field, tag) not in flagged:
+                items.append({"field": field, "tag": tag, "score": 0.8,
+                              "message": f"{name}: says \"{hit.group(0)}\", but the tagger says {tag}"})
+                break
     return items
+
+
+def _has_phrase(text: str, phrase: str) -> bool:
+    """The phrase as whole words, not as part of a longer word ("night" is not in "knight")."""
+    return re.search(r"(?<![a-z0-9])" + re.escape(phrase) + r"(?![a-z0-9])", text) is not None
 
 
 # -- template repetition ---------------------------------------------------

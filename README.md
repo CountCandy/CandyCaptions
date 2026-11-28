@@ -13,8 +13,8 @@ tags only.
 
 - Windows 11 or Linux with an NVIDIA GPU. CandyCaption itself is light; the GPU is for the model server.
 - [Git](https://git-scm.com/downloads), to download and update the app.
-- [uv](https://docs.astral.sh/uv/getting-started/installation/), which installs Python and the app's
-  dependencies by itself.
+- [uv](https://docs.astral.sh/uv/getting-started/installation/), which installs Python (3.11 or newer) and
+  the app's dependencies by itself.
 - A model server with a vision model. These instructions use [LM Studio](https://lmstudio.ai/download).
   Unsloth Studio, llama.cpp server and vLLM work too.
 
@@ -116,10 +116,23 @@ tagger that bad.
 Tag files you already have are never replaced unless you choose **Tag every image again**, and then the old
 tags stay in the image's history. The check also works on tag files that came from another tagger.
 
-The two thresholds (how sure the tagger must be) and a local tagger folder for offline use are in the Candy
-Shop tab. The tagger runs on the CPU as installed, which is slower per image than the model server but needs
-no setup. Tags help the captioner too: they are given to it as hints, and Flavor Clash flags a caption that
-disagrees with them.
+**This dataset's tag lists**, on the same card, shape every tag file the Label Maker writes or checks:
+
+- **Put the trigger word first**, with any other tags you always want in front. BluFlow can hold the first
+  tags in place while it shuffles the rest (`shuffle_keep_first_n`), which only works if the trigger word
+  leads the file.
+- **Tags never to write.** For a character LoRA, list the fixed traits the trigger word should carry, so they
+  are left out of the tags. `*` stands for anything: `* hair, * eyes` drops every hair and eye tag.
+- **Apply the lists to the tag files now** brings existing files in line after you change a list.
+
+The tagger uses the graphics card. The NVIDIA libraries it needs are installed with the app by `uv sync`
+(a download of a few GB the first time), and it takes about 2 GB of video memory. If the card cannot be used
+it falls back to the CPU by itself and the card says so; an out-of-date NVIDIA driver is the usual cause. The
+Candy Shop tab has the setting to keep it on the CPU, the two thresholds (how sure the tagger must be), and a
+local tagger folder for offline use.
+
+Tags help the captioner too: they are given to it as hints, and Flavor Clash flags a caption that disagrees
+with them.
 
 ### Hints
 
@@ -208,11 +221,12 @@ Four measured signals flag captions for review. The model is never asked to rate
 | --- | --- | --- | --- |
 | Mixed Flavors | uncertain words | the model wavered between two different facts, such as red or orange | token probabilities |
 | Taste Check | field checks | a field value the model, or the verifier, will not confirm when asked yes or no | one short request per field |
-| Flavor Clash | tag contradictions | a field disagrees with the tagger | a tag file |
+| Flavor Clash | tag contradictions | a field disagrees with the tagger: a color, a count, an opposite (sitting or standing, indoors or outdoors, day or night, long or short hair, the framing), or a thing the field says is not there | a tag file |
 | Same Old Flavor | template repetition | the caption repeats long phrases found in many others | nothing |
 
-Which word pairs count as "different facts" and which tags are checked against which field are editable
-lists (Recipe Box, at the bottom).
+Which word pairs count as "different facts", which tags are checked against which field, and which things
+count as opposites are editable lists (Recipe Box, at the bottom). Flavor Clash only flags a disagreement; a
+tag the caption does not mention is never a clash.
 
 ### Thinking
 

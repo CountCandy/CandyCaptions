@@ -32,6 +32,10 @@ DEFAULT_DATASET: dict[str, Any] = {
     "background": "#ffffff",
     "min_area_mp": 0.5,
     "recursive": False,
+    # Label Maker: tags that always lead a tag file, and tags that are never written to one.
+    "tags_trigger_first": True,
+    "tags_first": "",
+    "tags_never": "",
 }
 
 SCHEMA = """
