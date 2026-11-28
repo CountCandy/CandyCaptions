@@ -109,6 +109,26 @@ def fields_limit(snapshot: dict[str, Any]) -> int:
     return max(int(snapshot["sampling"].get("max_tokens_fields", 1800)), 110 * len(snapshot["prefill"]["fields"]))
 
 
+def compose_limit(snapshot: dict[str, Any]) -> int:
+    """Token limit for the caption: room for the longest one the recipe asks for (about 1.4 tokens a word)."""
+    return max(int(snapshot["sampling"].get("max_tokens_compose", 330)), int(snapshot["prefill"].get("max_words", 160) * 1.8) + 40)
+
+
+def refresh_tag_signals(project: Project, app_settings: dict[str, Any], wordlists: dict[str, Any]) -> int:
+    """Work out Flavor Clash again for every captioned image, after tag files changed. Returns how many moved."""
+    captioner = Captioner(project, None, app_settings, build_snapshot(project, app_settings), wordlists)  # type: ignore[arg-type]
+    weights = app_settings.get("score_weights") or {}
+    moved = 0
+    for image in project.store.images():
+        if not image.get("fields"):
+            continue
+        signals = captioner.signals_for(image, image["fields"], None, None, image.get("signals"))
+        if (signals.get("tags") or {}) != ((image.get("signals") or {}).get("tags") or {}):
+            project.store.update_image(image["id"], signals=signals, score=sig.combine(signals, weights)[0])
+            moved += 1
+    return moved
+
+
 class Captioner:
     def __init__(self, project: Project, client: ModelClient, app_settings: dict[str, Any],
                  snapshot: dict[str, Any], wordlists: dict[str, Any], image_base_url: str | None = None):
@@ -165,8 +185,7 @@ class Captioner:
         if not caption_fields(self.prefill, fields):
             raise CaptionError("No field has anything to put in a caption.")
         sampling = self.snapshot["sampling"]
-        # Room for the longest caption the recipe asks for (about 1.4 tokens a word), with a margin.
-        limit = max(int(sampling.get("max_tokens_compose", 200)), int(self.prefill.get("max_words", 160) * 1.8) + 40)
+        limit = compose_limit(self.snapshot)
         started = time.monotonic()
         reply = await self.client.complete(self.snapshot["model"], compose_messages(self.snapshot, fields, None, note),
                                            sampling=sampling, max_tokens=limit)

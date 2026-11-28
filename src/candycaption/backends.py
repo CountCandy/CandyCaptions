@@ -81,6 +81,8 @@ def default_caps(backend: str) -> dict[str, Any]:
         "thinking_control": prof["thinking"],
         # The model was seen thinking without being asked to, so every request needs room for it.
         "thinking_seen": False,
+        # /v1/responses was seen to accept the thinking switch too. Until then it is not sent there.
+        "responses_reasoning": False,
         "json_schema": True,
         "chat_logprobs": bool(prof["chat_logprobs"]),
         "responses": False,

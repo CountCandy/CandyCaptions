@@ -381,3 +381,28 @@ async def test_a_reply_used_up_by_thinking_is_asked_for_again_with_more_room(set
         server.should_exit = True
     sent = [r["body"]["max_tokens"] for r in app.state.mock["requests"]]
     assert sent == [24, 24 + 2048] and reply.text and reply.thought and not reply.cut_off
+
+
+@pytest.mark.parametrize("accepts", [True, False])
+async def test_thinking_and_token_probabilities_on_an_lm_studio_style_server(settings, accepts):
+    """Probabilities only on /v1/responses, the thinking switch proven on chat completions."""
+    app, server, url = _thinking_server(chat_logprobs=False, thinking_switches=("reasoning_effort",), responses_reasoning=accepts)
+    try:
+        found = await probe_connection(dict(settings, base_url=url, backend="lmstudio"))
+        caps = found["caps"]
+        assert caps["thinking_control"] == "reasoning_effort" and caps["responses_logprobs"] and caps["responses_reasoning"] is accepts
+        client = ModelClient(dict(settings, base_url=url, backend="lmstudio", caps=caps))
+        ask = [{"role": "user", "content": "Say ok."}]
+        quiet = client.build("mock-captioner", ask, sampling={"thinking": True}, max_tokens=50, want_logprobs=True, think=False)
+        loud = client.build("mock-captioner", ask, sampling={"thinking": True}, max_tokens=50, want_logprobs=True, think=True)
+        await client.close()
+    finally:
+        server.should_exit = True
+    if accepts:
+        assert quiet[0] == loud[0] == "responses"
+        assert quiet[1]["reasoning"] == {"effort": "none"} and loud[1]["reasoning"] == {"effort": "medium"}
+    else:
+        # The switch is never sent where it was refused. A request that thinks goes to chat completions instead.
+        assert quiet[0] == "responses" and "reasoning" not in quiet[1]
+        assert loud[0] == "chat" and loud[1]["reasoning_effort"] == "medium" and loud[1]["max_tokens"] == 50 + 2048
+        assert any("does not take the thinking switch" in line["text"] for line in found["lines"])

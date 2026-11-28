@@ -27,7 +27,7 @@ from .client import ModelClient, ModelServerError, image_part, text_part
 from .config import data_dir
 from .dataset import Project
 from .imaging import prepare_data_url, upright_filled
-from .pipeline import build_snapshot
+from .pipeline import build_snapshot, refresh_tag_signals
 from .prefills import KNOWN_FACTS
 
 logger = logging.getLogger(__name__)
@@ -384,7 +384,9 @@ class TagJob:
         general, character = float(self.app.get("tagger_general", 0.35)), float(self.app.get("tagger_character", 0.85))
         first, never = tag_rules(ds)
         images = self._images()
-        to_tag = [] if scope == "none" else [i for i in images if scope == "all" or not project.tags_path(i).exists()]
+        # "missing" also takes an image whose picture was replaced after it was tagged: those tags describe the old one.
+        to_tag = [] if scope == "none" else [i for i in images if scope == "all" or not project.tags_path(i).exists()
+                                             or (i.get("tagging") or {}).get("stale")]
         self.steps = (1 if to_tag else 0) + (1 if check else 0)
         self.step_number = 0
         vocabulary: set[str] | None = None
@@ -433,6 +435,12 @@ class TagJob:
         except Exception as exc:  # noqa: BLE001
             self.state, self.message = "failed", f"Unexpected error ({type(exc).__name__}: {exc})."
         finally:
+            try:
+                # Captions written before the tags changed are compared with the new tags.
+                from .wordlists import load_wordlists
+                await asyncio.to_thread(refresh_tag_signals, project, self.app, load_wordlists())
+            except Exception as exc:  # noqa: BLE001 - scoring must never hide how the job itself ended
+                logger.warning("Could not refresh Flavor Clash after tagging: %s", exc)
             self._tell()
 
     async def _check(self, scope: str, just_tagged: set[int], vocabulary: set[str] | None, background: str) -> None:
@@ -474,6 +482,7 @@ class TagJob:
                         result = await check_tags(client, snapshot, url, tags, image.get("note") or "", protected, vocabulary)
                     except ModelServerError as exc:
                         if exc.kind == "connect":
+                            self._stop = True       # the server is gone: let the other images finish quickly
                             raise
                         result = {"tags": tags, "removed": [], "replaced": [], "refused": str(exc)}
                         self.failed += 1
@@ -488,6 +497,11 @@ class TagJob:
                 self._tell()
 
         try:
-            await asyncio.gather(*(one(image) for image in todo))
+            # Every image is allowed to finish before the client is closed, even when one of them failed.
+            results = await asyncio.gather(*(one(image) for image in todo), return_exceptions=True)
         finally:
             await client.close()
+        for result in results:
+            if isinstance(result, BaseException):
+                self._stop = False
+                raise result

@@ -112,7 +112,7 @@ def tokenize(text: str, unsure: dict[str, tuple[str, float]] | None = None) -> l
 def create_app(*, chat_logprobs: bool = True, responses: bool = True, responses_base64: bool = True,
                api_key: str | None = None, delay: float = 0.0, strict_stream: bool = True,
                thinks: bool = False, thinking_switches: tuple[str, ...] = ("reasoning_effort", "chat_template_kwargs"),
-               thinking_tokens: int = 400) -> FastAPI:
+               thinking_tokens: int = 400, responses_reasoning: bool = True) -> FastAPI:
     """`thinks` is the server-side setting; `thinking_switches` are the per-request fields this server obeys.
     Thinking costs `thinking_tokens` out of the request's token limit, as it does on a real server."""
     app = FastAPI(title="CandyCaption mock model server")
@@ -311,6 +311,8 @@ def create_app(*, chat_logprobs: bool = True, responses: bool = True, responses_
             return JSONResponse({"error": {"message": "Unknown endpoint"}}, status_code=404)
         body = await request.json()
         state["requests"].append({"path": "responses", "body": body})
+        if "reasoning" in body and not responses_reasoning:
+            return JSONResponse({"error": {"message": "Unrecognized key: reasoning"}}, status_code=400)
         messages = body["input"] if isinstance(body["input"], list) else [{"role": "user", "content": body["input"]}]
         _, image = _texts_and_image(messages)
         if image and image.startswith("data:") and not responses_base64:

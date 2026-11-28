@@ -244,3 +244,40 @@ def test_the_tagger_falls_back_to_the_cpu_and_says_which_it_uses(toy_tagger):
     assert status(settings)["device"] is None                      # not known until it has been loaded
     get_tagger(settings)
     assert status(settings)["device"] in ("GPU", "CPU") and status(dict(settings, tagger_device="cpu"))["device"] is None
+
+
+async def test_flavor_clash_follows_the_tags_and_a_replaced_picture_is_tagged_again(api, mock_url):
+    folder = api.folder
+    # Caption first, with no tags for this image; then tag it. The caption is now compared with the new tags.
+    assert (await api.post("/api/run/start", json={})).status_code == 200
+    await server.state.runner.wait()
+    store = server.state.project.store
+    red = next(i for i in store.images() if i["rel"] == "a red.png")
+    assert red["fields"] and not (red["signals"]["tags"]["items"])
+    store.update_image(red["id"], fields=dict(red["fields"], appearance="short blonde hair in a bob cut"))
+    await run_tagger(api, scope="missing", check=False)
+    red = store.image(red["id"])
+    assert red["tagging"]["by"] and [i["tag"] for i in red["signals"]["tags"]["items"]] == ["red_hair"] and red["score"] > 0
+
+    # Undoing or applying lists moves the flag too: with red hair on the never list, nothing is left to clash.
+    await api.put("/api/dataset/settings", json={"tags_never": "red hair"})
+    assert (await api.post("/api/tagger/apply")).json()["changed"] == 1
+    assert store.image(red["id"])["signals"]["tags"]["items"] == []
+
+    # A different picture saved under the same name: its tags describe the old one, so "missing" does it again.
+    Image.new("RGB", (400, 400), (10, 10, 250)).save(folder / "a red.png")
+    data = (await api.post("/api/dataset/rescan")).json()
+    assert data["tags_stale"] == 1 and store.image(red["id"])["tagging"] == {"stale": True}
+    job = await run_tagger(api, scope="missing", check=False)
+    assert job["written"] == 1 and (folder / "a red.txt").read_text(encoding="utf-8") == "1girl, blue sky\n"
+    assert (await api.get("/api/dataset")).json()["tags_stale"] == 0
+
+
+async def test_a_lost_server_ends_the_tag_check_cleanly(api):
+    settings = dict(server.load_settings(), base_url="http://127.0.0.1:9/v1")
+    save_settings(settings)
+    job = await run_tagger(api, scope="none", check=True)
+    assert job["state"] == "failed" and "not answering" in job["message"]
+    # Nothing was half done, and another job can start.
+    assert "mock_wrong" in (api.folder / "c mine.txt").read_text(encoding="utf-8")
+    assert server.something_running() is None

@@ -159,7 +159,10 @@ class ModelClient:
         if want_logprobs and not caps["chat_logprobs"] and caps["responses_logprobs"]:
             image_ok = not _has_image(messages) or caps["responses_image"]
             schema_ok = schema is None or caps["responses_schema"]
-            if image_ok and schema_ok:
+            # Thinking was asked for, and only chat completions is known to take the switch: thinking wins
+            # over token probabilities for this request.
+            think_ok = switch.get("reasoning_effort", "none") == "none" or caps.get("responses_reasoning")
+            if image_ok and schema_ok and think_ok:
                 route = "responses"
 
         if route == "responses":
@@ -181,7 +184,7 @@ class ModelClient:
                         body[key] = extra[key]
             if schema:
                 body["text"] = {"format": {"type": "json_schema", "name": schema[0], "schema": schema[1], "strict": True}}
-            if "reasoning_effort" in switch:
+            if "reasoning_effort" in switch and caps.get("responses_reasoning"):
                 body["reasoning"] = {"effort": switch["reasoning_effort"]}
             return route, body
 

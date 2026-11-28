@@ -31,7 +31,7 @@ from .connect import test_connection
 from .dataset import HEALTH_CHECKS, Project
 from .filters import FilterError, compile_filter
 from .imaging import prepare_bytes, tiny_test_image, upright_filled
-from .pipeline import CaptionError, Captioner, build_snapshot, refresh_template
+from .pipeline import CaptionError, Captioner, build_snapshot, refresh_tag_signals, refresh_template
 from .prefills import (BASE_FIELDS, DEFAULT_SAMPLING, default_prefill, get_prefill, load_prefills, load_presets,
                        save_prefills, save_presets)
 from .runner import Broadcaster, Runner
@@ -383,6 +383,7 @@ def dataset_payload() -> dict[str, Any]:
         "tagged": sum(1 for i in images if i["has_tags"]),
         "tags_changed": sum(1 for i in all_images if (i.get("tagging") or {}).get("removed") or (i.get("tagging") or {}).get("replaced")),
         "tags_unchecked": sum(1 for i in all_images if proj.tags_path(i).exists() and not (i.get("tagging") or {}).get("checked_by")),
+        "tags_stale": sum(1 for i in all_images if (i.get("tagging") or {}).get("stale")),
         "tagger": tagger.status(settings),
         "tag_job": state.tag_job.status() if state.tag_job else None,
     }
@@ -696,8 +697,9 @@ async def edit_tags(image_id: int, body: dict = Body(...)):
 @app.post("/api/review/{image_id}/tags/undo")
 async def undo_tag_change(image_id: int, body: dict = Body(...)):
     """Put back a tag the model struck, or the original of one it corrected."""
-    proj = project()
+    proj, settings = project(), load_settings()
     tagger.undo_change(proj, image_or_404(image_id), str(body.get("tag") or ""))
+    await asyncio.to_thread(refresh_tag_signals, proj, settings, load_wordlists())
     return await review_detail(image_id)
 
 
@@ -726,6 +728,8 @@ async def tagger_apply():
     if (busy := something_running()):
         raise fail(409, f"{busy} Wait for it to finish first.")
     changed = await asyncio.to_thread(tagger.apply_rules, proj)
+    if changed:
+        await asyncio.to_thread(refresh_tag_signals, proj, load_settings(), load_wordlists())
     return {"changed": changed}
 
 

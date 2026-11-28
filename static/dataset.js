@@ -118,13 +118,14 @@
     let tagScope = 'missing', tagCheck = true;
     function labelCard() {
         const d = App.dataset, job = d.tag_job || {}, running = job.state === 'running';
-        const untagged = d.images.length - d.tagged;
+        // Images with no tag file, and images whose picture was replaced after the Label Maker tagged them.
+        const untagged = d.images.length - d.tagged + (d.tags_stale || 0);
         const line = running
             ? `${job.steps > 1 && job.step_number ? `Step ${job.step_number} of ${job.steps}: ` : ''}${job.step || 'Getting ready'}… ${job.step_total ? `${job.step_done} of ${job.step_total} images` : ''}`
             : (job.message || '');
         const where = d.tagger.device ? `It is running on the ${d.tagger.device}.` : (d.tagger.device_setting === 'cpu' ? 'It is set to use the CPU.' : 'It uses the graphics card when it can.');
         const scopes = [
-            ['missing', `Tag the ${untagged} image${untagged === 1 ? '' : 's'} with no tag file`],
+            ['missing', d.tags_stale ? `Tag the ${untagged} image${untagged === 1 ? '' : 's'} with no tag file or a replaced picture` : `Tag the ${untagged} image${untagged === 1 ? '' : 's'} with no tag file`],
             ['all', 'Tag every image again (old tags are kept in each image\'s history)'],
             ['none', 'Do not tag; only check the tags that are there'],
         ];

@@ -182,6 +182,20 @@ async def _probe_responses(client: ModelClient, model: str, messages: list, samp
         setcaps(responses_schema=False)
         note(False, "JSON schema output does not work on /v1/responses, so field replies stay on chat completions "
                     "and Mixed Flavors (uncertain words) is off.")
+    if caps.get("thinking_control") == "reasoning_effort":
+        # The switch was proven on chat completions. See whether this endpoint takes it as well.
+        try:
+            setcaps(responses_reasoning=True)
+            reply = await client.complete(model, [{"role": "user", "content": "Say ok."}], sampling=dict(sampling, thinking=False),
+                                          max_tokens=16, want_logprobs=True, think=True)
+            if reply.route != "responses" or reply.thought or not reply.text:
+                raise ModelServerError("reply", "the switch was not obeyed")
+        except ModelServerError as exc:
+            if exc.kind == "connect":
+                raise
+            setcaps(responses_reasoning=False)
+            note(None, "/v1/responses does not take the thinking switch. Requests that think go through chat completions "
+                       "instead, so Mixed Flavors (uncertain words) is off for an image while Thinking is ticked.")
     try:
         setcaps(responses_extra_sampling=True)
         await client.complete(model, [{"role": "user", "content": "Say ok."}],
