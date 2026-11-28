@@ -27,10 +27,17 @@ BASE_FIELDS = [
     ("expression", "Expression and gaze", "facial expression, where they are looking"),
     ("action", "Action and pose", "what they are doing, pose, held objects"),
     ("setting", "Setting and background", "place, props, simple or detailed background"),
+    ("layout", "Layout", "where things are in the frame: what is on the left, right, center, top and bottom, "
+                         "what is in front of or behind what, and how the subjects stand in relation to each other"),
+    ("details", "Small details", "things easy to miss: jewelry, buttons, patterns, textures and materials, "
+                                 "small objects, marks, anything held or worn that was not already listed"),
     ("lighting", "Lighting and time", "light sources, time of day, weather"),
     ("text", "Visible text", "exact transcription of any visible text, in quotes, line breaks kept"),
+    ("other", "Anything else", "anything visible that no field above covers; \"none\" if they cover everything"),
     ("rating", "Content rating", "one of: safe, suggestive, explicit"),
 ]
+# Fields added after the first release. A recipe saved before then gets them once, in these places.
+ADDED_FIELDS = {"layout": "setting", "details": "layout", "other": "text"}       # new key: the key it follows
 
 
 def _fields(overrides: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
@@ -45,9 +52,16 @@ def _fields(overrides: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-LOOK_PROMPT = (
+OLD_LOOK_PROMPT = (
     "You are describing one image for an image-model training set. Fill in every field of the form "
     "with short, plain, factual notes about what is visible. Do not write a caption yet."
+)
+LOOK_PROMPT = (
+    "You are describing one image for an image-model training set. Fill in every field of the form "
+    "with plain, factual notes about what is visible. Be thorough: write one to three full sentences for a "
+    "field that has something to report, and name concrete things such as colors, counts, materials, "
+    "positions and shapes. Look at the whole image, including the edges and the background, before you "
+    "answer. Do not repeat the same fact in two fields. Do not write a caption yet."
 )
 
 COMMON_RULES = [
@@ -63,7 +77,7 @@ COMMON_RULES = [
     "or \"tasteful\", and never explain it by art style, period or medium.",
 ]
 
-COMPOSE_PROMPT = (
+OLD_COMPOSE_PROMPT = (
     "Turn the notes into one paragraph that describes the image, {min_words} to {max_words} words long. "
     "Follow the order of the notes. Use plain declarative sentences. Use only what the notes state, and keep "
     "their concrete details (colors, counts, objects, expressions, what is where); when space is short, cut "
@@ -71,6 +85,20 @@ COMPOSE_PROMPT = (
     "skip any note that says \"none\". Do not mention notes, fields or tags. End on a complete sentence: if you are "
     "running long, stop one sentence early instead of breaking one off. Reply with the paragraph only."
 )
+COMPOSE_PROMPT = (
+    "Turn the notes into one paragraph that describes the image, {min_words} to {max_words} words long. "
+    "Follow the order of the notes. Use plain declarative sentences. Use only what the notes state, and keep "
+    "their concrete details (colors, counts, objects, expressions, what is where); when space is short, cut "
+    "filler words before you cut a fact. Never pad: if the notes do not fill the length, stop when they are "
+    "used up instead of adding general remarks. "
+    "Skip any note that says \"none\". Do not mention notes, fields or tags. End on a complete sentence: if you are "
+    "running long, stop one sentence early instead of breaking one off. Reply with the paragraph only."
+)
+
+# MOSS-Image's own long captions are detailed descriptions; this is that length, not the old medium one.
+LONG_WORDS = (110, 160)
+OLD_WORDS = (40, 70)
+WORDING = 3      # raised whenever the built-in wording changes in a way saved recipes should pick up
 
 COMMON_TOGGLES = [
     {"id": "use_trigger", "label": "Refer to the subject as the trigger word", "line": "Refer to the character as {trigger}.", "stage": "compose", "on": False},
@@ -110,7 +138,7 @@ DEFAULT_PREFILLS: list[dict[str, Any]] = [
         # The last four keep a "nothing wrong with it" Quality note from turning into a sentence of the caption.
         "banned_words": COMMON_BANNED + ["art style", "in the style of", "anime style", "stylized", "stylised",
                                          "no visible defects", "no watermark", "no visible watermark", "the piece is finished"],
-        "preset": "Balanced", "min_words": 40, "max_words": 70, "wording": 2,
+        "preset": "Balanced", "min_words": LONG_WORDS[0], "max_words": LONG_WORDS[1], "wording": WORDING,
     },
     {
         "id": "character", "name": "Character", "builtin": True,
@@ -125,7 +153,7 @@ DEFAULT_PREFILLS: list[dict[str, Any]] = [
         }),
         "toggles": _toggles({"use_trigger"}),
         "banned_words": list(COMMON_BANNED),
-        "preset": "Balanced", "min_words": 40, "max_words": 70, "wording": 2,
+        "preset": "Balanced", "min_words": LONG_WORDS[0], "max_words": LONG_WORDS[1], "wording": WORDING,
     },
     {
         "id": "concept", "name": "Concept", "builtin": True,
@@ -138,14 +166,15 @@ DEFAULT_PREFILLS: list[dict[str, Any]] = [
         "fields": _fields({}),
         "toggles": _toggles({"use_trigger"}, {"use_trigger": "Name the concept as {trigger}."}),
         "banned_words": list(COMMON_BANNED),
-        "preset": "Balanced", "min_words": 40, "max_words": 70, "wording": 2,
+        "preset": "Balanced", "min_words": LONG_WORDS[0], "max_words": LONG_WORDS[1], "wording": WORDING,
     },
 ]
 
 # Starting points to tune on the test bench, not measured values.
 DEFAULT_SAMPLING = {
     "temperature": 0.3, "top_p": 0.95, "top_k": 40, "min_p": 0.05, "repeat_penalty": 1.05,
-    "max_tokens_fields": 800, "max_tokens_compose": 200, "seed": 42, "thinking": False, "long_side": 1536,
+    "max_tokens_fields": 1800, "max_tokens_compose": 330, "seed": 42, "thinking": False,
+    "max_tokens_thinking": 2048, "long_side": 1536,
 }
 
 DEFAULT_PRESETS: list[dict[str, Any]] = [
@@ -179,19 +208,41 @@ def load_prefills() -> list[dict[str, Any]]:
     saved = _american(saved)
     for prefill in saved:
         default = default_prefill(prefill.get("id", ""))
-        if default is None or prefill.get("wording", 1) >= 2:
+        if default is None:
             continue
-        # Built-in recipes saved before these were added: the American English rule, and (Style) the
-        # phrases that keep a clean Quality note out of the caption. Nothing of yours is removed.
+        upgrade_prefill(prefill, default)
+    ids = {p["id"] for p in saved}
+    return saved + [copy.deepcopy(p) for p in DEFAULT_PREFILLS if p["id"] not in ids]
+
+
+def upgrade_prefill(prefill: dict[str, Any], default: dict[str, Any]) -> None:
+    """Bring a built-in recipe saved by an older version up to date. Nothing of the user's is removed,
+    and anything they changed from the old default is left as they set it."""
+    wording = prefill.get("wording", 1)
+    if wording < 2:
+        # The American English rule, and (Style) the phrases that keep a clean Quality note out of the caption.
         rule = "Write in American English."
         if rule not in prefill.get("rules", []):
             prefill["rules"] = [rule] + list(prefill.get("rules", []))
         have = {w.lower() for w in prefill.get("banned_words", [])}
         prefill["banned_words"] = list(prefill.get("banned_words", [])) + [
             w for w in default["banned_words"] if w.lower() not in have and w.startswith(("no ", "the piece"))]
-        prefill["wording"] = 2
-    ids = {p["id"] for p in saved}
-    return saved + [copy.deepcopy(p) for p in DEFAULT_PREFILLS if p["id"] not in ids]
+    if wording < 3:
+        # Longer captions: three more fields, fuller notes, and the long length MOSS-Image was trained on.
+        fields = prefill.setdefault("fields", [])
+        for key, after in ADDED_FIELDS.items():
+            if any(f["key"] == key for f in fields):
+                continue
+            new = next(copy.deepcopy(f) for f in default["fields"] if f["key"] == key)
+            at = next((n + 1 for n, f in enumerate(fields) if f["key"] == after), len(fields))
+            fields.insert(at, new)
+        if prefill.get("look_prompt") == OLD_LOOK_PROMPT:
+            prefill["look_prompt"] = LOOK_PROMPT
+        if prefill.get("compose_prompt") == OLD_COMPOSE_PROMPT:
+            prefill["compose_prompt"] = COMPOSE_PROMPT
+        if (prefill.get("min_words"), prefill.get("max_words")) == OLD_WORDS:
+            prefill["min_words"], prefill["max_words"] = LONG_WORDS
+    prefill["wording"] = WORDING
 
 
 def save_prefills(prefills: list[dict[str, Any]]) -> None:

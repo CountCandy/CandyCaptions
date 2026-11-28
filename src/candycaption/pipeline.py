@@ -100,6 +100,35 @@ def clean_caption(text: str, cut_off: bool = False) -> str:
     return text
 
 
+def fields_limit(snapshot: dict[str, Any]) -> int:
+    """Token limit for the fields reply: the dataset's setting, but never too small for the recipe.
+
+    Each field may hold up to three sentences, so a recipe with many fields needs more than a limit
+    that was saved when there were fewer. A reply cut off mid-JSON is useless, so err on the roomy side.
+    """
+    return max(int(snapshot["sampling"].get("max_tokens_fields", 1800)), 110 * len(snapshot["prefill"]["fields"]))
+
+
+def compose_limit(snapshot: dict[str, Any]) -> int:
+    """Token limit for the caption: room for the longest one the recipe asks for (about 1.4 tokens a word)."""
+    return max(int(snapshot["sampling"].get("max_tokens_compose", 330)), int(snapshot["prefill"].get("max_words", 160) * 1.8) + 40)
+
+
+def refresh_tag_signals(project: Project, app_settings: dict[str, Any], wordlists: dict[str, Any]) -> int:
+    """Work out Flavor Clash again for every captioned image, after tag files changed. Returns how many moved."""
+    captioner = Captioner(project, None, app_settings, build_snapshot(project, app_settings), wordlists)  # type: ignore[arg-type]
+    weights = app_settings.get("score_weights") or {}
+    moved = 0
+    for image in project.store.images():
+        if not image.get("fields"):
+            continue
+        signals = captioner.signals_for(image, image["fields"], None, None, image.get("signals"))
+        if (signals.get("tags") or {}) != ((image.get("signals") or {}).get("tags") or {}):
+            project.store.update_image(image["id"], signals=signals, score=sig.combine(signals, weights)[0])
+            moved += 1
+    return moved
+
+
 class Captioner:
     def __init__(self, project: Project, client: ModelClient, app_settings: dict[str, Any],
                  snapshot: dict[str, Any], wordlists: dict[str, Any], image_base_url: str | None = None):
@@ -130,8 +159,8 @@ class Captioner:
                                  self._http_url(image), image.get("note") or "")
         return self.client.build(
             snapshot["model"], messages, sampling=snapshot["sampling"],
-            max_tokens=snapshot["sampling"].get("max_tokens_fields", 800),
-            schema=("caption_fields", field_schema(snapshot["prefill"])), want_logprobs=True, stream=True,
+            max_tokens=fields_limit(snapshot),
+            schema=("caption_fields", field_schema(snapshot["prefill"])), want_logprobs=True, stream=True, think=True,
         )
 
     async def look(self, image: dict[str, Any], image_url: str, on_delta=None,
@@ -156,8 +185,7 @@ class Captioner:
         if not caption_fields(self.prefill, fields):
             raise CaptionError("No field has anything to put in a caption.")
         sampling = self.snapshot["sampling"]
-        # Room for the longest caption the recipe asks for (about 1.4 tokens a word), with a margin.
-        limit = max(int(sampling.get("max_tokens_compose", 200)), int(self.prefill.get("max_words", 70) * 1.8) + 40)
+        limit = compose_limit(self.snapshot)
         started = time.monotonic()
         reply = await self.client.complete(self.snapshot["model"], compose_messages(self.snapshot, fields, None, note),
                                            sampling=sampling, max_tokens=limit)
@@ -329,8 +357,8 @@ class Captioner:
         for turn in conversation:
             messages.append({"role": turn["role"], "content": turn["content"]})
         reply = await self.client.complete(self.snapshot["model"], messages, sampling=self.snapshot["sampling"],
-                                           max_tokens=self.snapshot["sampling"].get("max_tokens_fields", 800),
-                                           schema=("chat_fields", field_schema(self.prefill)))
+                                           max_tokens=fields_limit(self.snapshot),
+                                           schema=("chat_fields", field_schema(self.prefill)), think=True)
         new_fields = parse_fields(reply.text, self.prefill)
         if new_fields is None:
             raise CaptionError("The model's reply was not a usable set of fields. Try rephrasing.")

@@ -141,8 +141,10 @@ class Project:
                 # A different picture under the same name. Everything the store knew was about the
                 # old one, so forget it; a description still on disk is flagged until it is rewritten.
                 info["health"]["replaced_at"] = time.time()
+                # Tags the Label Maker wrote described the old picture too; mark them so it tags this one again.
+                stale = {"stale": True} if (existing.get("tagging") or {}).get("by") else None
                 self.store.update_image(image_id, status="pending", error=None, fields=None, caption=None, signals=None,
-                                        score=0, reviewed=0, note=None, raw=None, snapshot_id=None, run_id=None, style=None)
+                                        score=0, reviewed=0, note=None, raw=None, snapshot_id=None, run_id=None, style=None, tagging=stale)
                 self.store.pin(image_id, False)
             self.store.update_image(image_id, size=stat.st_size, mtime=stat.st_mtime, **info)
         self.store.mark_missing(present)

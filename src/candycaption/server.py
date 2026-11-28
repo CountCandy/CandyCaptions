@@ -31,11 +31,12 @@ from .connect import test_connection
 from .dataset import HEALTH_CHECKS, Project
 from .filters import FilterError, compile_filter
 from .imaging import prepare_bytes, tiny_test_image, upright_filled
-from .pipeline import CaptionError, Captioner, build_snapshot, refresh_template
+from .pipeline import CaptionError, Captioner, build_snapshot, refresh_tag_signals, refresh_template
 from .prefills import (BASE_FIELDS, DEFAULT_SAMPLING, default_prefill, get_prefill, load_prefills, load_presets,
                        save_prefills, save_presets)
 from .runner import Broadcaster, Runner
 from . import similar
+from . import tagger
 from . import style as flavor
 from .signals import combine
 from .store import natural_key
@@ -68,6 +69,7 @@ class State:
     base_url = "http://127.0.0.1:8200"
     bench_busy = False
     style_job: "flavor.StyleJob | None" = None
+    tag_job: "tagger.TagJob | None" = None
 
 
 state = State()
@@ -104,6 +106,8 @@ def something_running() -> str | None:
         return "A taste test is running."
     if state.style_job and state.style_job.busy:
         return "The style check is running in the Flavor Profile tab."
+    if state.tag_job and state.tag_job.busy:
+        return "Tagging is running in the Pantry tab."
     return None
 
 
@@ -343,6 +347,14 @@ async def share_import(body: dict = Body(...)):
 
 # -- dataset ---------------------------------------------------------------
 
+def _tag_changes(image: dict[str, Any]) -> dict[str, Any] | None:
+    """What the model did to this image's tags, when it did anything worth showing."""
+    record = image.get("tagging") or {}
+    if not (record.get("removed") or record.get("replaced") or record.get("refused")):
+        return None
+    return {"removed": record.get("removed") or [], "replaced": record.get("replaced") or [], "refused": record.get("refused") or ""}
+
+
 def dataset_payload() -> dict[str, Any]:
     if state.project is None:
         return {"open": False, "recent": load_settings().get("recent", [])}
@@ -361,12 +373,19 @@ def dataset_payload() -> dict[str, Any]:
             "v": f"{int(image['mtime'] or 0)}-{image['size'] or 0}",
             "status": image["status"], "has_caption": proj.has_caption(image), "has_tags": proj.tags_path(image).exists(),
             "health": badges, "note": image.get("note") or "", "pinned": image["id"] in pins, "reviewed": bool(image["reviewed"]),
+            "tagging": _tag_changes(image),
         })
     return {
         "open": True, "id": proj.id, "folder": str(proj.folder), "settings": proj.store.settings(), "images": images,
         "health_summary": summary, "health_checks": {k: {"name": v[0], "candy": v[1], "why": v[2]} for k, v in HEALTH_CHECKS.items()},
         "tokenizer": tokens.status(settings), "token_limit": settings.get("token_limit", 512),
         "captioned": sum(1 for i in images if i["has_caption"]), "recent": settings.get("recent", []),
+        "tagged": sum(1 for i in images if i["has_tags"]),
+        "tags_changed": sum(1 for i in all_images if (i.get("tagging") or {}).get("removed") or (i.get("tagging") or {}).get("replaced")),
+        "tags_unchecked": sum(1 for i in all_images if proj.tags_path(i).exists() and not (i.get("tagging") or {}).get("checked_by")),
+        "tags_stale": sum(1 for i in all_images if (i.get("tagging") or {}).get("stale")),
+        "tagger": tagger.status(settings),
+        "tag_job": state.tag_job.status() if state.tag_job else None,
     }
 
 
@@ -392,6 +411,7 @@ async def open_dataset(body: dict = Body(...)):
     state.project = proj
     state.runner = Runner(proj, load_settings(), publish=state.broadcaster.publish, image_base_url=state.base_url)
     state.style_job = None
+    state.tag_job = None
     settings = load_settings()
     settings["recent"] = ([str(proj.folder)] + [r for r in settings.get("recent", []) if r != str(proj.folder)])[:5]
     save_settings(settings)
@@ -575,7 +595,7 @@ def review_row(proj: Project, image: dict[str, Any], settings: dict[str, Any], n
         "id": image["id"], "rel": image["rel"], "caption": caption, "tags": tags, "score": score, "reasons": reasons,
         "reviewed": bool(image["reviewed"]), "status": image["status"], "error": image["error"],
         "words": len(caption.split()), "tokens": proj.token_count(image, settings, tags, caption),
-        "fields": image["fields"], "note": image.get("note") or "",
+        "fields": image["fields"], "note": image.get("note") or "", "tagging": image.get("tagging") or None,
     }
     if detail:
         snapshot = proj.store.snapshot(image["snapshot_id"])
@@ -672,6 +692,52 @@ async def edit_tags(image_id: int, body: dict = Body(...)):
         cap = Captioner(proj, None, settings, build_snapshot(proj, settings), load_wordlists())  # type: ignore[arg-type]
         _rescore(proj, image, settings, cap.signals_for(image, image["fields"], None, None, image["signals"]))
     return await review_detail(image_id)
+
+
+@app.post("/api/review/{image_id}/tags/undo")
+async def undo_tag_change(image_id: int, body: dict = Body(...)):
+    """Put back a tag the model struck, or the original of one it corrected."""
+    proj, settings = project(), load_settings()
+    tagger.undo_change(proj, image_or_404(image_id), str(body.get("tag") or ""))
+    await asyncio.to_thread(refresh_tag_signals, proj, settings, load_wordlists())
+    return await review_detail(image_id)
+
+
+@app.post("/api/tagger/run")
+async def tagger_run(body: dict = Body(default={})):
+    """Tag the images, let the model check the tags, or both. scope: missing, all, or none (check only)."""
+    proj, settings = project(), load_settings()
+    if (busy := something_running()):
+        raise fail(409, f"{busy} Wait for it to finish first.")
+    scope = body.get("scope") if body.get("scope") in ("missing", "all", "none") else "missing"
+    check = bool(body.get("check"))
+    if scope == "none" and not check:
+        raise fail(400, "Nothing to do: choose to tag images, to check tags, or both.")
+    if check and not settings.get("model"):
+        raise fail(400, "Pick a Captioner model in the Candy Shop tab first. It is the model that checks the tags.")
+    state.tag_job = tagger.TagJob(proj, settings, state.broadcaster.publish)
+    state.tag_job.start(scope=scope, check=check)
+    await asyncio.sleep(0)
+    return state.tag_job.status()
+
+
+@app.post("/api/tagger/apply")
+async def tagger_apply():
+    """Bring the existing tag files in line with this dataset's "always first" and "never write" lists."""
+    proj = project()
+    if (busy := something_running()):
+        raise fail(409, f"{busy} Wait for it to finish first.")
+    changed = await asyncio.to_thread(tagger.apply_rules, proj)
+    if changed:
+        await asyncio.to_thread(refresh_tag_signals, proj, load_settings(), load_wordlists())
+    return {"changed": changed}
+
+
+@app.post("/api/tagger/stop")
+async def tagger_stop():
+    if state.tag_job:
+        state.tag_job.stop()
+    return state.tag_job.status() if state.tag_job else {"state": "idle"}
 
 
 @app.put("/api/review/{image_id}/fields")

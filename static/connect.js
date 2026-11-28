@@ -74,7 +74,7 @@
             h('h2', null, candy('What\'s in Stock', 'the settings this server honors')),
             h('p', { class: 'hint', style: 'margin-bottom:10px' }, 'A setting the backend ignores is grayed out here and in the sampling controls, and is never sent.'),
             h('div', { class: 'chips' }, SAMPLING.map((name) => {
-                const yes = (profile.sampling || []).includes(name) && (name !== 'thinking' || profile.thinking);
+                const yes = name === 'thinking' ? !!caps.thinking_control : (profile.sampling || []).includes(name);
                 return h('span', { class: 'chip ' + (yes ? 'good' : 'neutral grayed'), title: yes ? 'sent' : 'not sent to this backend' }, yes ? '✓' : '–', ' ', name);
             })),
             h('p', { style: 'margin-top:12px' }, 'Token probabilities: ',
@@ -87,6 +87,22 @@
         api('/api/tokenizer').then((t) => {
             tokenizerStatus.replaceChildren(h('span', { class: 'chip ' + (t.exact ? 'good' : 'health') }, t.exact ? '✓ exact' : '≈ approximate'), ' ', t.source);
         }).catch(() => {});
+        const labelMaker = h('div', { class: 'card' },
+            h('h2', null, candy('Label Maker', 'auto-tagger: writes a tag file for each image')),
+            h('p', { class: 'hint', style: 'margin-bottom:10px' }, 'A small tagger model that reads an image and lists Danbooru-style tags. It runs inside CandyCaption, not on your model server, and is downloaded once (about 1.3 GB) the first time you tag. Run it from the Pantry tab.'),
+            h('div', { class: 'field' }, h('label', null, 'Local tagger folder', h('span', { class: 'plain' }, 'optional: a folder holding model.onnx and selected_tags.csv')),
+                h('input', { type: 'text', value: s.tagger_path, placeholder: 'leave empty to download', onchange: (e) => act(null, () => save({ tagger_path: e.target.value.trim() }).then(render)) })),
+            h('div', { class: 'field' }, h('label', { title: 'The tagger needs about 2 GB of video memory. Choose the CPU if the graphics card is full with your models; it is slower but always works.' }, 'Runs on'),
+                h('select', { onchange: (e) => act(null, () => save({ tagger_device: e.target.value })) },
+                    [['auto', 'The graphics card when it can be used, otherwise the CPU'], ['cpu', 'Always the CPU']].map(([value, label]) => h('option', { value, selected: (s.tagger_device || 'auto') === value }, label)))),
+            h('div', { class: 'grid3' },
+                h('div', { class: 'field' }, h('label', null, 'Download from', h('span', { class: 'plain' }, 'Hugging Face repo')),
+                    h('input', { type: 'text', value: s.tagger_repo, onchange: (e) => act(null, () => save({ tagger_repo: e.target.value.trim() }).then(render)) })),
+                h('div', { class: 'field' }, h('label', { title: 'A general tag is written when the tagger is at least this sure. Lower gives more tags and more wrong ones.' }, 'General tags', h('span', { class: 'plain' }, 'how sure, 0 to 1')),
+                    h('input', { type: 'number', min: 0.05, max: 0.99, step: 0.05, value: s.tagger_general, onchange: (e) => act(null, () => save({ tagger_general: Math.min(0.99, Math.max(0.05, Number(e.target.value) || 0.35)) })) })),
+                h('div', { class: 'field' }, h('label', { title: 'Character names need a higher bar, because a wrong name does more harm than a wrong detail.' }, 'Character tags', h('span', { class: 'plain' }, 'how sure, 0 to 1')),
+                    h('input', { type: 'number', min: 0.05, max: 0.99, step: 0.05, value: s.tagger_character, onchange: (e) => act(null, () => save({ tagger_character: Math.min(0.99, Math.max(0.05, Number(e.target.value) || 0.85)) })) }))));
+
         const tokenizer = h('div', { class: 'card' },
             h('h2', null, candy('Wrapper Size', 'token counter: does each caption fit the trainer\'s limit')),
             h('div', { class: 'field' }, h('label', null, 'Local tokenizer folder', h('span', { class: 'plain' }, 'optional, works offline')),
@@ -124,7 +140,7 @@
                 h('button', { class: 'quiet small', title: 'Plays even when the sound is switched off', onclick: () => playGumdrops(true) }, 'Test sound')),
             h('p', { class: 'hint' }, 'Kept in this browser. The bell in the header also switches it on and off.'));
 
-        panel.replaceChildren(h('div', { class: 'grid2' }, h('div', null, server, sounds), h('div', null, honors, tokenizer, advanced)));
+        panel.replaceChildren(h('div', { class: 'grid2' }, h('div', null, server, labelMaker, sounds), h('div', null, honors, tokenizer, advanced)));
     }
 
     App.tabs.connect = { show: render };

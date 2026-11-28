@@ -16,7 +16,7 @@ from typing import Any, Awaitable, Callable
 
 import httpx
 
-from .backends import effective_caps, sampling_body
+from .backends import DEFAULT_THINKING_ROOM, effective_caps, sampling_body, thinking_plan
 
 THINK_RE = re.compile(r"^\s*<think>.*?</think>\s*", re.S)
 
@@ -45,8 +45,8 @@ class Reply:
     def why_empty(self) -> str:
         """Plain-words reason for a reply with no usable answer in it."""
         if self.thought:
-            return ("The model spent its reply on thinking and wrote no answer. Turn thinking off for this model "
-                    "(in LM Studio: the model's settings), then try again.")
+            return ("The model spent its whole reply on thinking and wrote no answer, even with extra room. Raise "
+                    "Thinking room in the recipe's sampling settings, or turn thinking off for this model.")
         if self.cut_off:
             return "The reply was cut off at the token limit before it finished. Raise the max tokens setting."
         return ""
@@ -149,14 +149,20 @@ class ModelClient:
         want_logprobs: bool = False,
         top_logprobs: int = 5,
         stream: bool = False,
+        think: bool = False,
     ) -> tuple[str, dict[str, Any]]:
         """Return (route, body). The body is exactly what gets sent."""
         caps = self.caps
+        switch, room = thinking_plan(caps, sampling, think)
+        max_tokens = int(max_tokens) + room     # thinking is paid for out of the same limit as the answer
         route = "chat"
         if want_logprobs and not caps["chat_logprobs"] and caps["responses_logprobs"]:
             image_ok = not _has_image(messages) or caps["responses_image"]
             schema_ok = schema is None or caps["responses_schema"]
-            if image_ok and schema_ok:
+            # Thinking was asked for, and only chat completions is known to take the switch: thinking wins
+            # over token probabilities for this request.
+            think_ok = switch.get("reasoning_effort", "none") == "none" or caps.get("responses_reasoning")
+            if image_ok and schema_ok and think_ok:
                 route = "responses"
 
         if route == "responses":
@@ -178,12 +184,15 @@ class ModelClient:
                         body[key] = extra[key]
             if schema:
                 body["text"] = {"format": {"type": "json_schema", "name": schema[0], "schema": schema[1], "strict": True}}
+            if "reasoning_effort" in switch and caps.get("responses_reasoning"):
+                body["reasoning"] = {"effort": switch["reasoning_effort"]}
             return route, body
 
         body = {"model": model, "messages": _clean_messages(messages), "stream": bool(stream)}
         body.update(sampling_body(self.backend, sampling, max_tokens))
         if "max_tokens" not in body:
             body["max_tokens"] = int(max_tokens)
+        body.update(switch)
         if stream:
             body["stream_options"] = {"include_usage": True}
         if schema and caps["json_schema"]:
@@ -216,14 +225,25 @@ class ModelClient:
         want_logprobs: bool = False,
         top_logprobs: int = 5,
         on_delta: Callable[[str], Awaitable[None]] | None = None,
+        think: bool = False,
     ) -> Reply:
         route, body = self.build(
             model, messages, sampling=sampling, max_tokens=max_tokens, schema=schema,
-            want_logprobs=want_logprobs, top_logprobs=top_logprobs, stream=on_delta is not None,
+            want_logprobs=want_logprobs, top_logprobs=top_logprobs, stream=on_delta is not None, think=think,
         )
         return await self.send(route, body, on_delta)
 
     async def send(self, route: str, body: dict[str, Any], on_delta=None) -> Reply:
+        """Send one request. If thinking used up the whole reply, ask once more with room for it."""
+        reply = await self._send_once(route, body, on_delta)
+        if reply.text or not (reply.thought and reply.cut_off):
+            return reply
+        key = "max_output_tokens" if route == "responses" else "max_tokens"
+        roomier = dict(body)
+        roomier[key] = int(body.get(key) or 0) + max(DEFAULT_THINKING_ROOM, int(body.get(key) or 0))
+        return await self._send_once(route, roomier, on_delta)
+
+    async def _send_once(self, route: str, body: dict[str, Any], on_delta=None) -> Reply:
         started = time.monotonic()
         thought = cut_off = False
         if route == "responses":

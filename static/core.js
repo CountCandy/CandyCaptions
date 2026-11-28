@@ -227,6 +227,18 @@ function viewImage(id, rel, actions = [], hint = null) {
 
 // The Hint box: one line telling the model what is in this image. It is sent to the model as fact
 // whenever the image is captioned, and saved the moment you click away.
+// What the model changed in an image's tags. Click a change to undo it. `after` gets the server's reply.
+function tagChanges(id, tagging, after) {
+    if (!tagging || !((tagging.removed || []).length || (tagging.replaced || []).length || tagging.refused)) return null;
+    const undo = (tag) => act(null, async () => { const reply = await api(`/api/review/${id}/tags/undo`, 'POST', { tag }); if (after) after(reply); });
+    return h('div', { class: 'tag-changes' },
+        (tagging.removed || []).length ? [h('span', { class: 'hint' }, 'Model struck:'),
+            tagging.removed.map((tag) => h('span', { class: 'chip neutral clickable struck', title: 'Click to put this tag back', onclick: () => undo(tag) }, tag))] : null,
+        (tagging.replaced || []).length ? [h('span', { class: 'hint' }, 'Model corrected:'),
+            tagging.replaced.map(([from, to]) => h('span', { class: 'chip neutral clickable', title: `Click to change it back to ${from}`, onclick: () => undo(from) }, h('s', null, from), ' → ', to))] : null,
+        tagging.refused ? h('span', { class: 'chip health', title: tagging.refused }, '⚠ tags not checked: hover for why') : null);
+}
+
 function hintBox(id, value, onsave, attrs = {}) {
     const status = h('span', { class: 'plain' }, 'one line telling the model what is in this image');
     const area = h('textarea', {

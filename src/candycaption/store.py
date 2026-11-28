@@ -32,6 +32,10 @@ DEFAULT_DATASET: dict[str, Any] = {
     "background": "#ffffff",
     "min_area_mp": 0.5,
     "recursive": False,
+    # Label Maker: tags that always lead a tag file, and tags that are never written to one.
+    "tags_trigger_first": True,
+    "tags_first": "",
+    "tags_never": "",
 }
 
 SCHEMA = """
@@ -41,7 +45,7 @@ CREATE TABLE IF NOT EXISTS images (
     size INTEGER, mtime REAL, sha TEXT, phash TEXT, health TEXT,
     status TEXT DEFAULT 'pending', error TEXT, fields TEXT, caption TEXT,
     snapshot_id INTEGER, run_id INTEGER, signals TEXT, score REAL DEFAULT 0,
-    reviewed INTEGER DEFAULT 0, seconds REAL, check_seconds REAL, raw TEXT, missing INTEGER DEFAULT 0, note TEXT, style TEXT
+    reviewed INTEGER DEFAULT 0, seconds REAL, check_seconds REAL, raw TEXT, missing INTEGER DEFAULT 0, note TEXT, style TEXT, tagging TEXT
 );
 CREATE TABLE IF NOT EXISTS snapshots (id INTEGER PRIMARY KEY, created REAL, data TEXT);
 CREATE TABLE IF NOT EXISTS history (
@@ -52,7 +56,7 @@ CREATE TABLE IF NOT EXISTS test_runs (id INTEGER PRIMARY KEY, created REAL, labe
 """
 
 MAX_TEST_RUNS = 8
-JSON_COLUMNS = {"fields", "signals", "health", "style"}
+JSON_COLUMNS = {"fields", "signals", "health", "style", "tagging"}
 
 
 def natural_key(name: str) -> list:
@@ -78,7 +82,7 @@ class Store:
             self._db.executescript(SCHEMA)
             # Stores made before per-image notes existed get the column added.
             have = {row["name"] for row in self._db.execute("PRAGMA table_info(images)")}
-            for column in ("note", "style"):
+            for column in ("note", "style", "tagging"):
                 if column not in have:
                     self._db.execute(f"ALTER TABLE images ADD COLUMN {column} TEXT")
             self._db.commit()

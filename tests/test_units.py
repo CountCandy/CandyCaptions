@@ -131,7 +131,7 @@ def test_layers_placeholders_and_request_order():
     assert "never mention the art style" not in system["content"].lower()   # caption-only rules stay out of the look
     assert [part["type"] for part in user["content"]] == ["text", "image_url"]  # fixed text first, image last
     compose = compose_messages(snap, FIELDS, avoid=["tasteful"])[0]["content"]
-    assert "40 to 70 words" in compose and "Rewrite without: tasteful" in compose and "masterpiece" in compose
+    assert "110 to 160 words" in compose and "Rewrite without: tasteful" in compose and "masterpiece" in compose
 
 
 def test_nudity_lives_only_in_prefill_text():
@@ -152,7 +152,7 @@ def test_fields_are_data_and_drive_the_schema():
         {"key": "mood", "name": "Mood", "holds": "overall mood", "in_caption": True, "caption_note": ""}]
     schema = field_schema(prefill)
     assert "rating" not in schema["properties"] and schema["required"][-1] == "mood"
-    assert parse_fields('```json\n{"quality": "x", "style": "y", "camera": "z", "subjects": "s", "appearance": "a", "clothing": ["hat", "scarf"]}\n```', prefill)["clothing"] == "hat, scarf"
+    assert parse_fields('```json\n{"quality": "x", "style": "y", "camera": "z", "subjects": "s", "appearance": "a", "clothing": ["hat", "scarf"], "expression": "e", "action": "p"}\n```', prefill)["clothing"] == "hat, scarf"
     assert parse_fields('{"quality": "only one"}', prefill) is None
     assert parse_fields("not json", prefill) is None
 
@@ -162,7 +162,7 @@ def test_sampling_never_sends_what_a_backend_ignores():
     lm = sampling_body("lmstudio", sampling, 800)
     assert "min_p" not in lm and "chat_template_kwargs" not in lm and lm["top_k"] == 40 and lm["max_tokens"] == 800
     assert sampling_body("llamacpp", sampling, 800)["min_p"] == 0.05
-    assert sampling_body("llamacpp", sampling, 800)["chat_template_kwargs"] == {"enable_thinking": False}
+    assert "chat_template_kwargs" not in sampling_body("llamacpp", sampling, 800)     # thinking is decided per request
     assert "repetition_penalty" in sampling_body("vllm", sampling, 800)
     assert set(sampling_body("other", sampling, 800)) == {"temperature", "top_p", "seed", "max_tokens"}
 
@@ -278,3 +278,98 @@ def test_captions_come_out_in_american_spelling():
 
     assert clean_caption("Grey stone walls in the centre, with a coloured banner.") == "Gray stone walls in the center, with a colored banner."
     assert clean_caption("A greyhound runs.") == "A greyhound runs."
+
+
+# -- thinking --------------------------------------------------------------
+
+def test_thinking_is_switched_only_where_asked_and_gets_its_own_room():
+    from candycaption.backends import thinking_plan
+
+    on = {"thinking": True, "max_tokens_thinking": 3000}
+    # A server with a switch: on for the look step, explicitly off for everything else, room only where it thinks.
+    assert thinking_plan({"thinking_control": "reasoning_effort"}, on, True) == ({"reasoning_effort": "medium"}, 3000)
+    assert thinking_plan({"thinking_control": "reasoning_effort"}, on, False) == ({"reasoning_effort": "none"}, 0)
+    assert thinking_plan({"thinking_control": "chat_template_kwargs"}, {"thinking": False}, True) == (
+        {"chat_template_kwargs": {"enable_thinking": False}}, 0)
+    # No switch: nothing is sent. The model thinks or not as the server is set, so every request gets the room.
+    assert thinking_plan({"thinking_control": None}, on, False) == ({}, 3000)
+    assert thinking_plan({"thinking_control": None, "thinking_seen": True}, {"thinking": False}, False) == ({}, 2048)
+    assert thinking_plan({"thinking_control": None}, {"thinking": False}, True) == ({}, 0)
+
+
+def test_saved_recipes_pick_up_the_longer_caption_without_losing_changes():
+    from candycaption.prefills import LOOK_PROMPT, OLD_COMPOSE_PROMPT, OLD_LOOK_PROMPT, default_prefill, upgrade_prefill
+
+    def old(**changes):
+        recipe = default_prefill("style")
+        recipe["fields"] = [f for f in recipe["fields"] if f["key"] not in ("layout", "details", "other")]
+        recipe.update(look_prompt=OLD_LOOK_PROMPT, compose_prompt=OLD_COMPOSE_PROMPT, min_words=40, max_words=70, wording=2)
+        recipe.update(changes)
+        return recipe
+
+    untouched = old()
+    upgrade_prefill(untouched, default_prefill("style"))
+    keys = [f["key"] for f in untouched["fields"]]
+    assert keys == [f["key"] for f in default_prefill("style")["fields"]]
+    assert untouched["look_prompt"] == LOOK_PROMPT and "Never pad" in untouched["compose_prompt"]
+    assert (untouched["min_words"], untouched["max_words"], untouched["wording"]) == (110, 160, 3)
+
+    mine = old(look_prompt="My own instructions.", min_words=60, max_words=120)
+    mine["fields"] = [f for f in mine["fields"] if f["key"] != "lighting"]       # the user removed a field
+    upgrade_prefill(mine, default_prefill("style"))
+    assert mine["look_prompt"] == "My own instructions." and (mine["min_words"], mine["max_words"]) == (60, 120)
+    assert "details" in [f["key"] for f in mine["fields"]] and "lighting" not in [f["key"] for f in mine["fields"]]
+    before = json.dumps(mine)
+    upgrade_prefill(mine, default_prefill("style"))
+    assert json.dumps(mine) == before                                            # and only once
+
+
+def test_flavor_clash_covers_opposites_absence_and_more_colors():
+    names = dict(NAMES, camera="Camera and framing", setting="Setting and background", lighting="Lighting and time",
+                 action="Action and pose", expression="Expression and gaze", style="Style and medium", quality="Quality")
+
+    def clashes(fields, tags):
+        return {(i["field"], i["tag"]) for i in sig.tag_contradictions(fields, sig.parse_tags(tags), names, DEFAULT_WORDLISTS)}
+
+    agree = {"appearance": "long hair down to her waist", "action": "sitting on a bench", "camera": "full body, seen from above",
+             "setting": "outdoors in a park, with a green background", "lighting": "bright daylight", "expression": "eyes closed, smiling",
+             "clothing": "a wide hat and white socks", "subjects": "one girl", "quality": "no visible defects"}
+    tags = "1girl, long hair, sitting, full body, from above, outdoors, day, closed eyes, hat, white socks, green background"
+    assert clashes(agree, tags) == set()
+
+    clash = {"appearance": "short hair in a bob cut", "action": "she stands by a bench", "camera": "close-up from below",
+             "setting": "indoors, against a blue background", "lighting": "moonlight through a window",
+             "expression": "looking at the viewer", "clothing": "no hat, black socks", "subjects": "one girl",
+             "quality": "finished piece, no watermark"}
+    assert clashes(clash, tags + ", watermark") == {
+        ("appearance", "long_hair"), ("action", "sitting"), ("camera", "full_body"), ("camera", "from_above"),
+        ("setting", "outdoors"), ("lighting", "day"), ("expression", "closed_eyes"), ("clothing", "hat"),
+        ("clothing", "white_socks"), ("setting", "green_background"), ("quality", "watermark")}
+
+    # Leaving something out is never a clash, and a word inside a longer word does not count.
+    quiet = {"appearance": "a girl", "action": "a knight rests", "camera": "none", "setting": "a room", "lighting": "none",
+             "expression": "calm", "clothing": "a coat", "subjects": "one girl"}
+    assert clashes(quiet, tags + ", night") == set()
+    # With several people, one may sit while the other stands, so pose and hair length are not judged.
+    pair = dict(clash, subjects="two girls")
+    found = clashes(pair, tags.replace("1girl", "2girls"))
+    assert ("action", "sitting") not in found and ("appearance", "long_hair") not in found and ("setting", "outdoors") in found
+    # The tagger sees nobody; the field counts someone.
+    assert clashes({"subjects": "one girl by a tree"}, "no humans, tree") == {("subjects", "no_humans")}
+    # Black and white in the field against a tagger that did not say monochrome is not judged; the reverse is.
+    assert clashes({"style": "a full-color digital painting"}, "monochrome") == {("style", "monochrome")}
+
+
+def test_saved_word_lists_gain_the_new_checks(data_dir):
+    import copy
+    from candycaption.config import save_json
+    from candycaption.wordlists import load_wordlists
+
+    old = copy.deepcopy(DEFAULT_WORDLISTS)
+    for key in ("opposites", "absence_skip", "people_tag", "attributes_version"):
+        old["tag_map"].pop(key)
+    old["tag_map"]["attributes"] = {"hair": {"field": "appearance", "nouns": ["hair", "my own word"]}}
+    save_json("wordlists.json", old)
+    loaded = load_wordlists()
+    assert loaded["tag_map"]["opposites"] and "background" in loaded["tag_map"]["attributes"]
+    assert loaded["tag_map"]["attributes"]["hair"]["nouns"] == ["hair", "my own word"]      # an edited entry is kept

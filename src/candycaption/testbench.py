@@ -12,7 +12,7 @@ from typing import Any, Callable
 
 from .client import ModelClient, ModelServerError, redact
 from .dataset import Project
-from .pipeline import CaptionError, Captioner, build_snapshot
+from .pipeline import CaptionError, Captioner, build_snapshot, compose_limit
 from .prefills import compose_messages, load_prefills, save_prefills
 from .signals import combine
 from .wordlists import load_wordlists
@@ -79,7 +79,7 @@ async def request_preview(project: Project, app_settings: dict[str, Any], image:
     out = {"look": {"endpoint": "/v1/responses" if route == "responses" else "/v1/chat/completions", "body": redact(body)}}
     fields = image.get("fields") or {f["key"]: f"<{f['name']}>" for f in snapshot["prefill"]["fields"]}
     _, compose_body = client.build(snapshot["model"], compose_messages(snapshot, fields, None, image.get("note") or ""), sampling=snapshot["sampling"],
-                                   max_tokens=snapshot["sampling"].get("max_tokens_compose", 200))
+                                   max_tokens=compose_limit(snapshot))
     out["compose"] = {"endpoint": "/v1/chat/completions", "body": compose_body,
                       "note": None if image.get("fields") else "Field values are placeholders until this image has been captioned."}
     return out
