@@ -8,8 +8,8 @@ const SLIDERS = [
     ['top_k', 'Top K', 0, 100, 1, 'top_k', '0 turns it off'],
     ['min_p', 'Min P', 0, 0.3, 0.01, 'min_p', ''],
     ['repeat_penalty', 'Repeat penalty', 1, 1.3, 0.01, 'repeat_penalty', ''],
-    ['max_tokens_fields', 'Max tokens, fields', 200, 1500, 50, 'max_tokens', 'Twelve fields of JSON can pass 300 tokens'],
-    ['max_tokens_compose', 'Max tokens, caption', 100, 600, 10, 'max_tokens', 'A 70-word caption is about 100 tokens'],
+    ['max_tokens_fields', 'Max tokens, fields', 400, 4000, 50, 'max_tokens', 'Sixteen fields of full sentences run to about 1,000 tokens. Raised by itself when the recipe has many fields.'],
+    ['max_tokens_compose', 'Max tokens, caption', 100, 1200, 10, 'max_tokens', 'A 150-word caption is about 210 tokens. Raised by itself to fit the recipe\'s longest caption.'],
     ['long_side', 'Image long side (px)', 768, 2048, 64, null, 'Smaller is faster; larger catches small details'],
 ];
 
@@ -104,7 +104,29 @@ function renderRecipe(container) {
                 h('div', { class: 'slider-row' }, h('span', null, 'Seed'),
                     h('span', { class: 'hint' }, 'fixed, so test runs can be compared'),
                     h('input', { type: 'number', value: settings.sampling.seed, disabled: !honored('seed'), onchange: (e) => patchDataset({ sampling: { seed: Number(e.target.value) || 0 } }) })),
-                h('label', { class: 'check' + (profile.thinking ? '' : ' grayed'), title: profile.thinking ? '' : `${profile.name} does not take this setting per request. Turn thinking off in the model's own settings there.` },
-                    h('input', { type: 'checkbox', checked: settings.sampling.thinking, disabled: !profile.thinking, onchange: (e) => patchDataset({ sampling: { thinking: e.target.checked } }) }),
-                    'Thinking', h('span', { class: 'plain' }, 'slower, rarely helps captions')))));
+                thinkingRows(settings, patchDataset, rerender))));
+}
+
+// Thinking: the model reasons before it answers. It is used where the image is read (the look step and
+// Sweet Talk), never for composing or yes/no checks. Thinking is paid for out of the reply's token limit,
+// so it gets its own allowance on top.
+function thinkingRows(settings, patchDataset, rerender) {
+    const caps = App.caps || {};
+    const control = caps.thinking_control;
+    const on = !!settings.sampling.thinking;
+    const room = settings.sampling.max_tokens_thinking || 2048;
+    const how = control
+        ? 'CandyCaption switches it on for the look step and Sweet Talk, and off for everything else.'
+        : (caps.tested
+            ? 'This server takes no per-request switch, so thinking follows the model\'s own setting there. Tick this when that setting is on, and every request gets room for it.'
+            : 'Press Test connection in the Candy Shop to find out whether this server can switch thinking per request.');
+    const value = h('input', { type: 'number', min: 256, max: 16000, step: 256, value: room, disabled: !on,
+        onchange: (e) => patchDataset({ sampling: { max_tokens_thinking: Math.max(256, Number(e.target.value) || 2048) } }) });
+    return [
+        h('label', { class: 'check', title: how },
+            h('input', { type: 'checkbox', checked: on, onchange: (e) => { patchDataset({ sampling: { thinking: e.target.checked } }); settings.sampling.thinking = e.target.checked; rerender(); } }),
+            'Thinking', h('span', { class: 'plain' }, 'the model reasons before it reads the image: slower, can catch more')),
+        on ? h('div', { class: 'slider-row' + (on ? '' : ' grayed') }, h('span', { title: 'Extra tokens allowed for thinking, on top of the limits above. If a reply still comes back empty, CandyCaption asks once more with double the room.' }, 'Thinking room (tokens)'),
+            h('span', { class: 'hint' }, how), value) : null,
+    ];
 }

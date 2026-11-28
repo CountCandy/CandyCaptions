@@ -62,10 +62,9 @@ Check on the model's LM Studio page that the verifier you pick accepts images. F
    ```
 
    You can also load them in the app. `lms ls` lists what is on disk and `lms ps` what is loaded.
-4. In LM Studio's settings for each loaded model, turn **thinking off** and set **Max Concurrent
-   Predictions** to the Batch Size you plan to use in CandyCaption (4 is the default for both). With
-   thinking on, a model can spend its whole reply reasoning and return an empty caption; CandyCaption
-   says so when that happens.
+4. In LM Studio's settings for each loaded model, set **Max Concurrent Predictions** to the Batch Size
+   you plan to use in CandyCaption (4 is the default for both). Leave thinking off there unless you want
+   it; see [Thinking](#thinking) below.
 5. Start the server: `lms server start`, or the Developer tab in the app. It listens on
    http://localhost:1234/v1. If you paste the address without `/v1` into CandyCaption, it adds it.
 
@@ -169,9 +168,10 @@ exception in the whole app is **How does it differ?** in the Flavor Profile tab,
 images at once so it can compare them.
 
 1. **Look.** The image (turned upright, transparency filled, downscaled), its tags and its hint, if it
-   has one, go to the model, which fills in twelve fields as JSON.
-2. **Compose.** A text-only request turns the fields the prefill keeps into one paragraph of 40 to 70
-   words. Switching prefill later only reruns this step (**Recompose only**).
+   has one, go to the model, which fills in the recipe's fields as JSON, a few sentences each. The
+   built-in recipes have fifteen, including where things are in the frame, small details, and anything else.
+2. **Compose.** A text-only request turns the fields the prefill keeps into one paragraph of 110 to
+   160 words, the long caption MOSS-Image was trained on. Switching prefill later only reruns this step (**Recompose only**).
 3. Banned words trigger one rewrite, the caption is written to disk at once, and the fields are scored.
    Captions are written in American English.
 
@@ -186,6 +186,28 @@ Four measured signals flag captions for review. The model is never asked to rate
 
 Which word pairs count as "different facts" and which tags are checked against which field are editable
 lists (Recipe Box, at the bottom).
+
+### Thinking
+
+Some models can reason before they answer. Tick **Thinking** in the recipe's sampling settings (Taste Test
+or Candy Factory) to use it. It is used where the image is read: the look step and Sweet Talk. Composing the
+caption and the yes or no checks never think, because it only slows them down.
+
+Thinking is paid for out of the same token limit as the answer, which is why a thinking model can return an
+empty reply. CandyCaption adds **Thinking room** (2048 tokens by default) on top of the normal limit, and if
+a reply still comes back as thinking only, it asks once more with more room before giving up.
+
+**Test connection** finds out how your server switches thinking:
+
+- If the server takes a per-request switch, CandyCaption turns thinking on for the look step and off for
+  everything else, whatever the model's own setting is.
+- If it takes none, thinking follows the model's setting on the server. Turn it on there, tick Thinking in
+  the recipe, and every request gets the room.
+
+LM Studio's switch has changed between versions, so nothing is assumed about it until the test has run.
+
+A recipe saved by an older version of the app is brought up to date once, by itself: the three new fields are
+added, and the prompt and word range change only if you had left them at the old defaults.
 
 ## Command line
 

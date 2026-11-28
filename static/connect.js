@@ -74,7 +74,7 @@
             h('h2', null, candy('What\'s in Stock', 'the settings this server honors')),
             h('p', { class: 'hint', style: 'margin-bottom:10px' }, 'A setting the backend ignores is grayed out here and in the sampling controls, and is never sent.'),
             h('div', { class: 'chips' }, SAMPLING.map((name) => {
-                const yes = (profile.sampling || []).includes(name) && (name !== 'thinking' || profile.thinking);
+                const yes = name === 'thinking' ? !!caps.thinking_control : (profile.sampling || []).includes(name);
                 return h('span', { class: 'chip ' + (yes ? 'good' : 'neutral grayed'), title: yes ? 'sent' : 'not sent to this backend' }, yes ? '✓' : '–', ' ', name);
             })),
             h('p', { style: 'margin-top:12px' }, 'Token probabilities: ',

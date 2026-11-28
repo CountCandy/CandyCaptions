@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .backends import default_caps
+from .backends import THINKING_CONTROLS, default_caps, profile
 from .client import ModelClient, ModelServerError, image_part, text_part
 from .imaging import tiny_test_image
 
@@ -40,6 +40,9 @@ async def test_connection(settings: dict[str, Any], probe_image_url: str | None 
             note(False, "The server lists no models. Load one, then test again.")
             return {"ok": False, "models": models, "caps": caps, "lines": lines}
 
+        # 0. Thinking first: the short test requests below fail on a model that thinks unless room is made for it.
+        await _probe_thinking(client, model, settings.get("backend", "other"), caps, note)
+
         image = tiny_test_image()
         messages = [{"role": "user", "content": [text_part("Name the two colors of the squares in a few words."), image_part(image, probe_image_url)]}]
 
@@ -57,10 +60,6 @@ async def test_connection(settings: dict[str, Any], probe_image_url: str | None 
             note(True, f"{model} read the test image and answered: \"{reply.text[:80]}\"")
         else:
             note(False, f"{model} gave no answer about the test image. " + (reply.why_empty() or "Check that it accepts images."))
-        if reply.thought:
-            note(False, "This model is thinking before it answers. Captions can come back empty that way, and it is "
-                        "slower. Turn thinking off in the model's settings on the server.")
-        caps["thinking_seen"] = reply.thought
         note(caps["chat_logprobs"], "Token probabilities on chat completions." if caps["chat_logprobs"]
              else "No token probabilities on chat completions.")
 
@@ -91,6 +90,52 @@ async def test_connection(settings: dict[str, Any], probe_image_url: str | None 
         return {"ok": False, "models": [], "caps": caps, "lines": lines}
     finally:
         await client.close()
+
+
+async def _probe_thinking(client: ModelClient, model: str, backend: str, caps: dict, note) -> None:
+    """Find out whether this model thinks, and which per-request switch, if any, the server obeys."""
+    ask = [{"role": "user", "content": "Reply with the single word ok."}]
+
+    def setcaps(**values: Any) -> None:
+        caps.update(values)
+        client.caps.update(values)
+
+    async def run(control: str | None, on: bool):
+        setcaps(thinking_control=control)
+        return await client.complete(model, ask, sampling={"temperature": 0.0, "seed": 1, "thinking": on},
+                                     max_tokens=16, think=True)
+
+    setcaps(thinking_seen=False)
+    unasked = (await run(None, False)).thought            # nothing sent: what the server does when left alone
+    first = profile(backend)["thinking"]
+    order = ([first] if first else []) + [c for c in THINKING_CONTROLS if c != first]
+    for control in order:
+        try:
+            off = await run(control, False)
+            if off.thought:
+                continue                                    # told not to think, and it did: this switch is ignored
+            on = await run(control, True)
+        except ModelServerError as exc:
+            if exc.kind == "connect":
+                raise
+            continue                                        # the server refused the field
+        if on.thought or unasked:
+            setcaps(thinking_control=control, thinking_seen=False)
+            if on.thought:
+                note(True, f"Thinking can be switched per request here (through {control}). CandyCaption turns it on only "
+                           "where the recipe asks for it, and off for every other request.")
+            else:
+                note(None, f"Thinking can be switched off per request here (through {control}), but asking for it "
+                           "did not make this model think.")
+            return
+    setcaps(thinking_control=None, thinking_seen=unasked)
+    if unasked:
+        note(None, "This model thinks before it answers, and the server takes no per-request switch for it. Every "
+                   "request is given extra room so the answer still fits, which makes captioning slower. To stop it, "
+                   "turn thinking off in the model's settings on the server.")
+    else:
+        note(None, "This model does not think, or the server takes no per-request switch for it. To use thinking, "
+                   "turn it on in the model's settings on the server, then test again.")
 
 
 async def _probe_responses(client: ModelClient, model: str, messages: list, sampling: dict, caps: dict, note) -> None:

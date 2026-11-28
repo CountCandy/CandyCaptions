@@ -359,7 +359,7 @@ pre.payload { max-height: 60vh; overflow: auto; padding: 12px; border-radius: 8p
 .pins-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(430px, 1fr)); gap: 12px; margin-top: 8px; }
 .pinned { display: grid; grid-template-columns: 96px 1fr; gap: 12px; padding: 12px; border: 1px solid var(--input-border); border-radius: 10px; background: rgba(0, 0, 0, 0.14); }
 .pinned img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; }
-.slider-row { display: grid; grid-template-columns: 170px 1fr 64px; gap: 10px; align-items: center; margin-bottom: 7px; font-size: 14px; }
+.slider-row { display: grid; grid-template-columns: 170px 1fr 78px; gap: 10px; align-items: center; margin-bottom: 7px; font-size: 14px; }
 .slider-row output { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
 .slider-row input[type="number"] { padding: 5px 8px; }
 

@@ -9,7 +9,7 @@ from candycaption.prefills import find_banned
 from candycaption.runner import Runner
 from candycaption.signals import combine
 
-from conftest import make_image
+from conftest import _serve, make_image
 
 
 async def run(folder, settings, **dataset_settings):
@@ -264,7 +264,7 @@ async def test_a_reply_that_is_all_thinking_says_so(dataset, settings):
 
     client = ModelClient(settings, transport=httpx.MockTransport(thinking_only))
     reply = await client.complete("m", [{"role": "user", "content": "hi"}], sampling={}, max_tokens=50)
-    assert reply.text == "" and reply.thought and "Turn thinking off" in reply.why_empty()
+    assert reply.text == "" and reply.thought and "turn thinking off" in reply.why_empty()
     await client.close()
 
     def unfinished_think_tag(request):
@@ -280,7 +280,7 @@ async def test_a_reply_that_is_all_thinking_says_so(dataset, settings):
     runner.start()
     await runner.wait()
     assert runner.failed == 3
-    assert all("Turn thinking off" in image["error"] for image in project.store.images())
+    assert all("turn thinking off" in image["error"] for image in project.store.images())
 
 
 async def test_a_fault_after_the_caption_is_written_never_loses_the_caption(dataset, settings, monkeypatch):
@@ -305,3 +305,79 @@ async def test_a_fault_after_the_caption_is_written_never_loses_the_caption(data
     assert runner.done == 3 and runner.failed == 0
     image = by_name(project)["plain.png"]
     assert image["status"] == "done" and image["fields"] and "KeyError" in image["signals"]["error"]
+
+
+# -- thinking --------------------------------------------------------------
+
+def _thinking_server(**options):
+    from candycaption.mock_server import create_app
+
+    app = create_app(**options)
+    server, url = _serve(app)
+    return app, server, url
+
+
+@pytest.mark.parametrize("options,control,seen,phrase", [
+    # LM Studio as its developers describe it: reasoning_effort on chat completions.
+    ({"thinking_switches": ("reasoning_effort",)}, "reasoning_effort", False, "switched per request"),
+    # A llama.cpp-style server that is set to think but obeys the template switch.
+    ({"thinking_switches": ("chat_template_kwargs",), "thinks": True}, "chat_template_kwargs", False, "switched per request"),
+    # Thinking set on the server, and no switch obeyed: it cannot be stopped from here, only given room.
+    ({"thinking_switches": (), "thinks": True}, None, True, "takes no per-request switch"),
+    # No thinking at all.
+    ({"thinking_switches": ()}, None, False, "does not think"),
+])
+async def test_connection_test_finds_how_thinking_is_switched(settings, options, control, seen, phrase):
+    app, server, url = _thinking_server(**options)
+    try:
+        result = await probe_connection(dict(settings, base_url=url, backend="lmstudio"))
+    finally:
+        server.should_exit = True
+    caps = result["caps"]
+    assert result["ok"] and caps["thinking_control"] == control and caps["thinking_seen"] is seen
+    assert any(phrase in line["text"] for line in result["lines"])
+    # Whatever the server does about thinking, the rest of the test still got its answers.
+    assert caps["json_schema"] and any("read the test image" in line["text"] for line in result["lines"])
+
+
+async def test_thinking_is_used_for_the_look_step_only_and_never_empties_a_caption(dataset, settings):
+    app, server, url = _thinking_server(thinking_switches=("reasoning_effort",))
+    try:
+        found = await probe_connection(dict(settings, base_url=url, backend="lmstudio"))
+        settings = dict(settings, base_url=url, backend="lmstudio", caps=found["caps"])
+        project = Project(dataset)
+        project.scan()
+        ds = project.store.settings()
+        ds["sampling"].update(thinking=True, max_tokens_thinking=600)
+        project.store.save_settings(ds)
+        app.state.mock["requests"].clear()
+        runner = Runner(project, settings)
+        runner.start()
+        await runner.wait()
+    finally:
+        server.should_exit = True
+    bodies = [r["body"] for r in app.state.mock["requests"]]
+    looks = [b for b in bodies if (b.get("response_format") or {}).get("json_schema", {}).get("name") == "caption_fields"
+             or (b.get("text") or {}).get("format", {}).get("name") == "caption_fields"]
+    others = [b for b in bodies if b not in looks]
+    effort = lambda b: b.get("reasoning_effort") or (b.get("reasoning") or {}).get("effort")
+    assert looks and all(effort(b) == "medium" for b in looks)
+    assert others and all(effort(b) == "none" for b in others)
+    limit = lambda b: b.get("max_tokens") or b.get("max_output_tokens")
+    assert all(limit(b) >= 1800 + 600 for b in looks)                 # the fields limit plus the thinking room
+    done = [i for i in project.store.images() if i["status"] == "done"]
+    assert done and all(project.read_caption(i).strip() for i in done)
+
+
+async def test_a_reply_used_up_by_thinking_is_asked_for_again_with_more_room(settings):
+    # The server thinks whatever it is told, and the app has not been told (no Test connection yet).
+    app, server, url = _thinking_server(thinking_switches=(), thinks=True, thinking_tokens=900)
+    try:
+        client = ModelClient(dict(settings, base_url=url, backend="lmstudio"))
+        reply = await client.complete("mock-captioner", [{"role": "user", "content": "Say ok."}],
+                                      sampling={"temperature": 0}, max_tokens=24)
+        await client.close()
+    finally:
+        server.should_exit = True
+    sent = [r["body"]["max_tokens"] for r in app.state.mock["requests"]]
+    assert sent == [24, 24 + 2048] and reply.text and reply.thought and not reply.cut_off

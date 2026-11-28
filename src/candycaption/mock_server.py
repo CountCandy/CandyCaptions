@@ -110,7 +110,11 @@ def tokenize(text: str, unsure: dict[str, tuple[str, float]] | None = None) -> l
 
 
 def create_app(*, chat_logprobs: bool = True, responses: bool = True, responses_base64: bool = True,
-               api_key: str | None = None, delay: float = 0.0, strict_stream: bool = True) -> FastAPI:
+               api_key: str | None = None, delay: float = 0.0, strict_stream: bool = True,
+               thinks: bool = False, thinking_switches: tuple[str, ...] = ("reasoning_effort", "chat_template_kwargs"),
+               thinking_tokens: int = 400) -> FastAPI:
+    """`thinks` is the server-side setting; `thinking_switches` are the per-request fields this server obeys.
+    Thinking costs `thinking_tokens` out of the request's token limit, as it does on a real server."""
     app = FastAPI(title="CandyCaption mock model server")
     state: dict[str, Any] = {"flaky_seen": set(), "doubt": set(), "requests": []}
     app.state.mock = state
@@ -212,6 +216,15 @@ def create_app(*, chat_logprobs: bool = True, responses: bool = True, responses_
             return 200, "Red and blue squares on white.", {}
         return 200, "ok", {}
 
+    def thinking(body: dict[str, Any]) -> bool:
+        if "reasoning_effort" in thinking_switches:
+            effort = body.get("reasoning_effort") or (body.get("reasoning") or {}).get("effort")
+            if effort:
+                return effort != "none"
+        if "chat_template_kwargs" in thinking_switches and "enable_thinking" in (body.get("chat_template_kwargs") or {}):
+            return bool(body["chat_template_kwargs"]["enable_thinking"])
+        return thinks
+
     def with_logprobs(text: str, unsure: dict[str, tuple[str, float]]) -> list[dict[str, Any]]:
         if "__yes__" in unsure:
             p = unsure["__yes__"][1]
@@ -245,16 +258,27 @@ def create_app(*, chat_logprobs: bool = True, responses: bool = True, responses_
             await asyncio.sleep(delay)
         tokens = with_logprobs(text, unsure) if text else []
         want = chat_logprobs and body.get("logprobs")
-        usage = {"prompt_tokens": 300, "completion_tokens": len(tokens), "total_tokens": 300 + len(tokens)}
+        thought, finish, spent = "", "stop", 0
+        if thinking(body):
+            thought, spent = "Let me look at this carefully before answering.", thinking_tokens
+            if int(body.get("max_tokens") or 0) < thinking_tokens + len(tokens):
+                text, tokens, finish = "", [], "length"       # the limit ran out while still thinking
+        usage = {"prompt_tokens": 300, "completion_tokens": spent + len(tokens), "total_tokens": 300 + spent + len(tokens)}
         base = {"id": "mock", "object": "chat.completion", "created": int(time.time()), "model": body.get("model")}
 
         if not body.get("stream"):
-            choice: dict[str, Any] = {"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": "stop"}
+            message: dict[str, Any] = {"role": "assistant", "content": text}
+            if thought:
+                message["reasoning_content"] = thought
+            choice: dict[str, Any] = {"index": 0, "message": message, "finish_reason": finish}
             if want:
                 choice["logprobs"] = {"content": tokens}
             return {**base, "choices": [choice], "usage": usage}
 
         async def stream():
+            if thought:
+                first = {"index": 0, "delta": {"reasoning_content": thought}, "finish_reason": None}
+                yield f"data: {json.dumps({**base, 'object': 'chat.completion.chunk', 'choices': [first]})}\n\n"
             for tok in tokens:
                 choice = {"index": 0, "delta": {"content": tok["token"]}, "finish_reason": None}
                 if want:
@@ -262,7 +286,7 @@ def create_app(*, chat_logprobs: bool = True, responses: bool = True, responses_
                 yield f"data: {json.dumps({**base, 'object': 'chat.completion.chunk', 'choices': [choice]})}\n\n"
                 if delay:
                     await asyncio.sleep(delay / max(1, len(tokens)))
-            yield f"data: {json.dumps({**base, 'choices': [{'index': 0, 'delta': {}, 'finish_reason': 'stop'}]})}\n\n"
+            yield f"data: {json.dumps({**base, 'choices': [{'index': 0, 'delta': {}, 'finish_reason': finish}]})}\n\n"
             yield f"data: {json.dumps({**base, 'choices': [], 'usage': usage})}\n\n"
             yield "data: [DONE]\n\n"
 
@@ -288,9 +312,15 @@ def create_app(*, chat_logprobs: bool = True, responses: bool = True, responses_
         tokens = with_logprobs(text, unsure) if text else []
         if "message.output_text.logprobs" in (body.get("include") or []):
             part["logprobs"] = tokens
-        return {"id": "mock", "object": "response", "status": "completed", "model": body.get("model"),
-                "output": [{"type": "message", "role": "assistant", "content": [part]}],
-                "usage": {"input_tokens": 300, "output_tokens": len(tokens)}}
+        output: list[dict[str, Any]] = [{"type": "message", "role": "assistant", "content": [part]}]
+        status_word, spent = "completed", 0
+        if thinking(body):
+            spent = thinking_tokens
+            output.insert(0, {"type": "reasoning", "summary": []})
+            if int(body.get("max_output_tokens") or 0) < thinking_tokens + len(tokens):
+                output, status_word = output[:1], "incomplete"
+        return {"id": "mock", "object": "response", "status": status_word, "model": body.get("model"),
+                "output": output, "usage": {"input_tokens": 300, "output_tokens": spent + len(tokens)}}
 
     return app
 
