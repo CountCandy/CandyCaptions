@@ -314,6 +314,7 @@
                         h('button', { class: 'quiet', onclick: openChat, disabled: !d.fields, title: d.fields ? 'Tell the model what is wrong and let it rewrite the caption' : 'Sweet Talk works from the fields the model filled in, and this caption has none. Regenerate it first.' }, candy('Sweet Talk', 'review chat'))),
                     h('label', null, 'Tags', h('span', { class: 'plain' }, d.rel.replace(/\.[^.]+$/, '') + '.txt')),
                     h('textarea', { rows: 3, value: d.tags, onchange: (e) => act(null, () => saveText('tags', e.target.value)) }),
+                    tagChanges(d.id, d.tagging, (reply) => refreshFrom(reply)),
                     h('div', { class: 'row', style: 'align-items:flex-end; margin-top:12px' }, hint,
                         h('button', {
                             id: 'reviewRegenerate', class: 'quiet', onclick: (e) => act(e.target, async () => {

@@ -56,6 +56,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "tokenizer_path": "",
     "tokenizer_repo": "Qwen/Qwen3.5-27B",
     "token_limit": 512,
+    # Label Maker (auto-tagger): a local folder wins over the download.
+    "tagger_path": "",
+    "tagger_repo": "SmilingWolf/wd-eva02-large-tagger-v3",
+    "tagger_general": 0.35,
+    "tagger_character": 0.85,
     "score_weights": {"uncertain": 0.3, "checks": 0.4, "tags": 0.2, "template": 0.1},
     "settings_version": 2,
     "uncertain_min_alt": 0.25,

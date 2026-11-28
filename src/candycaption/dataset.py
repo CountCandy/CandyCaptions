@@ -142,7 +142,7 @@ class Project:
                 # old one, so forget it; a description still on disk is flagged until it is rewritten.
                 info["health"]["replaced_at"] = time.time()
                 self.store.update_image(image_id, status="pending", error=None, fields=None, caption=None, signals=None,
-                                        score=0, reviewed=0, note=None, raw=None, snapshot_id=None, run_id=None, style=None)
+                                        score=0, reviewed=0, note=None, raw=None, snapshot_id=None, run_id=None, style=None, tagging=None)
                 self.store.pin(image_id, False)
             self.store.update_image(image_id, size=stat.st_size, mtime=stat.st_mtime, **info)
         self.store.mark_missing(present)

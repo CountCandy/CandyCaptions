@@ -87,6 +87,19 @@
         api('/api/tokenizer').then((t) => {
             tokenizerStatus.replaceChildren(h('span', { class: 'chip ' + (t.exact ? 'good' : 'health') }, t.exact ? '✓ exact' : '≈ approximate'), ' ', t.source);
         }).catch(() => {});
+        const labelMaker = h('div', { class: 'card' },
+            h('h2', null, candy('Label Maker', 'auto-tagger: writes a tag file for each image')),
+            h('p', { class: 'hint', style: 'margin-bottom:10px' }, 'A small tagger model that reads an image and lists Danbooru-style tags. It runs inside CandyCaption, not on your model server, and is downloaded once (about 1.3 GB) the first time you tag. Run it from the Pantry tab.'),
+            h('div', { class: 'field' }, h('label', null, 'Local tagger folder', h('span', { class: 'plain' }, 'optional: a folder holding model.onnx and selected_tags.csv')),
+                h('input', { type: 'text', value: s.tagger_path, placeholder: 'leave empty to download', onchange: (e) => act(null, () => save({ tagger_path: e.target.value.trim() }).then(render)) })),
+            h('div', { class: 'grid3' },
+                h('div', { class: 'field' }, h('label', null, 'Download from', h('span', { class: 'plain' }, 'Hugging Face repo')),
+                    h('input', { type: 'text', value: s.tagger_repo, onchange: (e) => act(null, () => save({ tagger_repo: e.target.value.trim() }).then(render)) })),
+                h('div', { class: 'field' }, h('label', { title: 'A general tag is written when the tagger is at least this sure. Lower gives more tags and more wrong ones.' }, 'General tags', h('span', { class: 'plain' }, 'how sure, 0 to 1')),
+                    h('input', { type: 'number', min: 0.05, max: 0.99, step: 0.05, value: s.tagger_general, onchange: (e) => act(null, () => save({ tagger_general: Math.min(0.99, Math.max(0.05, Number(e.target.value) || 0.35)) })) })),
+                h('div', { class: 'field' }, h('label', { title: 'Character names need a higher bar, because a wrong name does more harm than a wrong detail.' }, 'Character tags', h('span', { class: 'plain' }, 'how sure, 0 to 1')),
+                    h('input', { type: 'number', min: 0.05, max: 0.99, step: 0.05, value: s.tagger_character, onchange: (e) => act(null, () => save({ tagger_character: Math.min(0.99, Math.max(0.05, Number(e.target.value) || 0.85)) })) }))));
+
         const tokenizer = h('div', { class: 'card' },
             h('h2', null, candy('Wrapper Size', 'token counter: does each caption fit the trainer\'s limit')),
             h('div', { class: 'field' }, h('label', null, 'Local tokenizer folder', h('span', { class: 'plain' }, 'optional, works offline')),
@@ -124,7 +137,7 @@
                 h('button', { class: 'quiet small', title: 'Plays even when the sound is switched off', onclick: () => playGumdrops(true) }, 'Test sound')),
             h('p', { class: 'hint' }, 'Kept in this browser. The bell in the header also switches it on and off.'));
 
-        panel.replaceChildren(h('div', { class: 'grid2' }, h('div', null, server, sounds), h('div', null, honors, tokenizer, advanced)));
+        panel.replaceChildren(h('div', { class: 'grid2' }, h('div', null, server, labelMaker, sounds), h('div', null, honors, tokenizer, advanced)));
     }
 
     App.tabs.connect = { show: render };

@@ -85,7 +85,7 @@ what your server supports.
 | --- | --- | --- |
 | Candy Shop | 1 · Connect | Pick the backend, the Captioner and the optional Taste Tester (verifier), then Test connection. Also the token counter (Wrapper Size) and the finish sound (Gumdrop Bell). |
 | Recipe Box | 2 · Prefills | Edit the Style, Character and Concept recipes: prompts, rules, fields and their order, option toggles, banned words. |
-| Pantry | 3 · Dataset | Open a folder. In the Browse window you can set the folder it starts in. Health checks (Freshness Check) run at once. Each image has an optional hint line. |
+| Pantry | 3 · Dataset | Open a folder. In the Browse window you can set the folder it starts in. Health checks (Freshness Check) run at once. The Label Maker writes tag files and has the model check them. Each image has an optional hint line. |
 | Taste Test | 4 · Test bench | Pin 5 to 10 hard images, give them hints and answer-key facts, and compare recipe versions on them before a full run. The newest 8 test batches are kept, each with the model that made it. |
 | Candy Factory | 5 · Run | Start, pause, resume and stop the batch, and watch it live. |
 | Sorting Table | 6 · Review | The doubtful captions with the field in doubt named, by file name or worst first. Fix them by hand or by talking to the model. All caption editing is here, including find and replace. |
@@ -93,6 +93,33 @@ what your server supports.
 
 Lists are in file-name order everywhere, with numbers read as numbers, so `ta (2)` comes before `ta (16)`.
 Click any picture to see it large.
+
+### Label Maker: tag files
+
+BluFlow pairs each image with a tag file of the same name (`ta (1).png` with `ta (1).txt`), a comma-separated
+list of Danbooru-style tags. MOSS-Image understands tag prompts as well as sentences, and BluFlow's mixed
+caption modes train on the tags part of the time. If your images have no tag files, the **Label Maker** card in
+the Pantry makes them.
+
+1. **The tagger reads the image.** It is a small classifier (WD EVA02 Large v3 by default) that runs inside
+   CandyCaption, not on your model server. It is downloaded once, about 1.3 GB, into the app's `data` folder
+   the first time you tag. Character names come first, then the other tags from most to least sure.
+2. **Your Captioner model checks the tags**, if you leave that box ticked. One request per image: it strikes a
+   tag that is clearly wrong, or swaps it for the right one (red hair that is plainly orange hair). It keeps a
+   tag whenever it is unsure, never adds tags of its own, and never touches the trigger word.
+
+Every change the model makes is listed with the image, in the Pantry list and in the Sorting Table. Click a
+struck or corrected tag to undo it. If the model wants to change more than half of an image's tags, nothing is
+changed and the image is marked for you to check by hand, because that is a model misreading the image, not a
+tagger that bad.
+
+Tag files you already have are never replaced unless you choose **Tag every image again**, and then the old
+tags stay in the image's history. The check also works on tag files that came from another tagger.
+
+The two thresholds (how sure the tagger must be) and a local tagger folder for offline use are in the Candy
+Shop tab. The tagger runs on the CPU as installed, which is slower per image than the model server but needs
+no setup. Tags help the captioner too: they are given to it as hints, and Flavor Clash flags a caption that
+disagrees with them.
 
 ### Hints
 
@@ -246,7 +273,7 @@ Only if none of those works is the count approximate, and the page says so.
 
 Everything the app remembers is under `data/` next to the launcher (or `CANDYCAPTION_DATA`): settings,
 prefills, one SQLite project store per dataset, backups of images fixed in place, and the tokenizer cache.
-Nothing but `_nl.txt` and tag files is ever written into a dataset folder, and the `_nl.txt` files stay the
+Nothing but `_nl.txt` and tag files is ever written into a dataset folder (the tagger model itself lives under `data/tagger`), and the `_nl.txt` files stay the
 source of truth.
 
 ## Development
@@ -269,6 +296,7 @@ src/candycaption/
 ├── backends.py     what each backend honors
 ├── connect.py      Test connection
 ├── dataset.py      scanning, caption files, health checks, find and replace
+├── tagger.py       Label Maker: tag files from the image, and the model's check of them
 ├── style.py        Flavor Profile: source-quality pass, style lens, ringer test
 ├── similar.py      Flavor Profile: pairs of images or captions that are too alike
 ├── store.py        the per-dataset SQLite store
@@ -311,7 +339,7 @@ for your eye, not a verdict. A set needs at least 8 images.
 ## Not built yet
 
 A style-embedding model (CSD) as a third opinion for subtle differences, dataset-specific banned words
-from the style card, the tag editor and auto-tagger, the watched folder and the BluFlow export.
+from the style card, a full tag editor, the watched folder and the BluFlow export.
 
 ## License
 

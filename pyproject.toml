@@ -18,12 +18,16 @@ dependencies = [
     # first-run download uses huggingface-hub. Both are small, no PyTorch.
     "tokenizers>=0.20.0",
     "huggingface-hub>=0.24.0",
+    # Label Maker: runs the image tagger (an ONNX file) inside the app. No PyTorch.
+    "onnxruntime>=1.18",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.24.0",
+    # Builds a toy tagger model for the tests, so the real loading and scoring code runs.
+    "onnx>=1.16",
 ]
 
 [project.scripts]

@@ -189,6 +189,17 @@ def create_app(*, chat_logprobs: bool = True, responses: bool = True, responses_
                     verdicts.append("missing")
             return 200, json.dumps({"verdicts": verdicts}), {}
 
+        if schema_name == "tag_check":
+            # mock_wrong is struck, mock_red becomes orange hair, and mock_wipe strikes everything.
+            listed = [t.strip() for t in re.search(r"Tags to check: (.*)", text).group(1).split(",") if t.strip()]
+            if "mock_wipe" in listed:
+                return 200, json.dumps({"remove": listed, "replace": []}), {}
+            return 200, json.dumps({
+                "remove": [t for t in listed if t in ("mock_wrong", "mock_made_up")],
+                "replace": [{"from": t, "to": "orange hair" if t == "mock_red" else "not a real tag at all here"}
+                            for t in listed if t in ("mock_red", "mock_made_up_swap")],
+            }), {}
+
         if schema_name:
             return 200, json.dumps({"answer": "ok"}), {}
 
